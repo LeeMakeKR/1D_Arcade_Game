@@ -76,8 +76,6 @@ Simon 대전 — 번갈아 색 시퀀스에 하나씩 추가하며 따라하기,
 
 
 
-
-
 하드웨어
 RGB LED (ws2812 line led)
 RGB 스위치 (3개 혹은 4개)
@@ -89,42 +87,76 @@ RGB 스위치 (3개 혹은 4개)
 (길이에 따른 전압 강하 체크할것)
 i2s MAX98357A 모듈(앰프 포함) - 멀티트랙 재생 가능
 
-권장 핀아웃 (ESP32 DevKit 기준)
-- 입력: 스위치 5개 + 아날로그 2개
-- 출력: UART 2핀(아두이노간 통신), SPI OLED, WS2812 데이터, I2S MAX98357A
-- ⚠️ 보드 확인 필요: 아래 UART2(GPIO16/17)는 PSRAM 미내장 ESP32-WROOM-32 계열에서만 사용 가능. PSRAM 내장 ESP32-WROVER 계열은 GPIO16/17이 내부적으로 PSRAM과 연결되어 있어 GPIO로 사용 불가 — 보드가 WROVER라면 UART2 핀을 다른 GPIO로 재배치할 것
+권장 핀아웃 (WeAct ESP32-S3 N16R8 / DevKitC-1 기준)
 
-| 기능 | ESP32 핀 | 방향 | 비고 |
-|---|---|---|---|
-| 스위치 1 | GPIO32 | 입력 | 내부 풀업 사용 권장 (`INPUT_PULLUP`) |
-| 스위치 2 | GPIO33 | 입력 | 내부 풀업 사용 권장 |
-| 스위치 3 | GPIO25 | 입력 | 내부 풀업 사용 권장 |
-| 스위치 4 | GPIO26 | 입력 | 내부 풀업 사용 권장 |
-| 스위치 5 | GPIO27 | 입력 | 내부 풀업 사용 권장 |
-| 아날로그 입력 1 (조이스틱 X) | GPIO34 (ADC1_CH6) | 입력 전용 | ADC1 사용 권장 (Wi-Fi 사용시 ADC2 충돌 회피) |
-| 아날로그 입력 2 (조이스틱 Y) | GPIO35 (ADC1_CH7) | 입력 전용 | 입력 전용 핀이라 버튼 연결은 비권장 |
-| UART TX (상대 보드 RX로) | GPIO17 (UART2 TX) | 출력 | 아두이노간 직결 통신용 |
-| UART RX (상대 보드 TX에서) | GPIO16 (UART2 RX) | 입력 | GND 공통 필수 |
-| OLED SCK (SPI CLK) | GPIO18 | 출력 | VSPI 기본 클럭 핀 |
-| OLED MOSI (SPI DATA) | GPIO23 | 출력 | VSPI 기본 MOSI 핀 |
-| OLED CS | GPIO5 | 출력 | SPI 칩셀렉트 (스트래핑 핀 — 부팅 시 로우로 끌리면 이슈 가능, 외부 풀업 권장) |
-| OLED DC | GPIO4 | 출력 | 데이터/커맨드 선택 |
-| OLED RST | GPIO2 | 출력 | 리셋 제어(모듈에 따라 생략 가능) (스트래핑 핀 — 부팅 시 하이로 끌리면 이슈 가능) |
-| WS2812 DIN | GPIO13 | 출력 | 330R 직렬저항 권장, 5V LED면 레벨시프터 권장 (일반 GPIO, 이 프로젝트에서 WS2812 전용으로 단독 배치) |
-| I2S BCLK | GPIO14 | 출력 | MAX98357A BCLK |
-| I2S LRCLK (WS/LRC) | GPIO15 | 출력 | MAX98357A LRC |
-| I2S DOUT | GPIO22 | 출력 | MAX98357A DIN (ESP32 기본 I2C SCL 핀과 동일 — I2C 미사용 시 무관) |
+배치 우선순위: 1) 하드웨어가 사실상 고정하는 핀(ADC1 채널, 옥탈 PSRAM 전용 핀, 부팅 스트랩핀, 네이티브 USB, USB-UART 브릿지용 UART0)을 먼저 확정 → 2) 남는 핀 중에서 같은 역할끼리 물리적으로 인접하게 배치. ESP32-S3는 GPIO 매트릭스로 대부분의 주변장치(UART, I2S, SPI 등)를 자유롭게 재배치할 수 있어 클래식 ESP32보다 배치 자유도가 높지만, ADC1/스트랩핀/옥탈 PSRAM/네이티브 USB 핀은 여전히 하드웨어로 고정되므로 이 핀들을 먼저 피하거나 배정한 뒤 인접 배치를 적용함.
+
+[입력]
+
+- 조이스틱 X축 (아날로그, ADC1_CH3, 하드웨어 고정): GPIO4
+- 조이스틱 Y축 (아날로그, ADC1_CH4, 하드웨어 고정): GPIO5
+- 조이스틱 클릭 스위치 (디지털 입력): GPIO6
+- 버튼1: GPIO7
+- 버튼2: GPIO15
+- 버튼3: GPIO16
+- 버튼4: GPIO17
+- 버튼5: GPIO18
+
+(조이스틱 3핀 GPIO4→5→6과 버튼 5개 GPIO7→15→16→17→18은 보드 좌측 헤더에서 RST 바로 다음부터 물리적으로 연속 배치)
+
+[출력]
+
+- WS2812 데이터: GPIO8
+- Nokia 5110 LCD: DC GPIO9, CS GPIO10(FSPI 하드웨어 기본 CS0), DIN(MOSI) GPIO11(FSPI 하드웨어 기본 핀), SCLK GPIO12(FSPI 하드웨어 기본 핀), RST GPIO14
+- UART2 (보드 간 통신): TX GPIO1, RX GPIO2
+- I2S MAX98357A (앰프): BCLK GPIO42, LRCLK(WS) GPIO41, DOUT GPIO40
+
+(LCD는 SCLK/MOSI/CS를 FSPI 하드웨어 기본 핀(GPIO12/11/10)에 먼저 고정하고, DC/RST를 그 앞뒤 GPIO9→14에 몰아 배치. FSPI MISO 기본핀(GPIO13)은 LCD가 사용하지 않아 예비 핀으로 남김. UART2 GPIO1→2, I2S GPIO42→41→40은 각각 보드 우측 헤더에서 물리적으로 연속 배치)
+
+핀아웃 다이어그램 (WeAct ESP32-S3 N16R8 DevKitC-1, mischianti 핀아웃 이미지 배치 기준)
+
+```text
+                                                     ┌─[ANT]──┐
+                                      3V3            ●──┤        ├──●  GND
+                                      3V3            ●──┤        ├──●  GPIO43         → (USB-UART TXD0, 사용금지)
+                                      RST            ●──┤        ├──●  GPIO44         → (USB-UART RXD0, 사용금지)
+           IN: 조이스틱 X (ADC1_CH3)  GPIO4          ●──┤        ├──●  GPIO1          → OUT: UART2 TX
+           IN: 조이스틱 Y (ADC1_CH4)  GPIO5          ●──┤        ├──●  GPIO2          → OUT: UART2 RX
+            IN: 조이스틱 클릭 스위치  GPIO6          ●──┤        ├──●  GPIO42         → OUT: I2S BCLK
+                           IN: 버튼1  GPIO7          ●──┤        ├──●  GPIO41         → OUT: I2S LRCLK(WS)
+                           IN: 버튼2  GPIO15         ●──┤        ├──●  GPIO40         → OUT: I2S DOUT
+                           IN: 버튼3  GPIO16         ●──┤        ├──●  GPIO39         → (JTAG 예비핀, 미사용)
+                           IN: 버튼4  GPIO17         ●──┤        ├──●  GPIO38         → (옥탈 PSRAM 내부용, 사용금지)
+                           IN: 버튼5  GPIO18         ●──┤        ├──●  GPIO37         → (옥탈 PSRAM 내부용, 사용금지)
+                    OUT: WS2812 DATA  GPIO8          ●──┤        ├──●  GPIO36         → (옥탈 PSRAM 내부용, 사용금지)
+             (스트랩핀/JTAG, 미사용)  GPIO3          ●──┤        ├──●  GPIO35         → (옥탈 PSRAM 내부용, 사용금지)
+                  (스트랩핀, 미사용)  GPIO46         ●──┤        ├──●  GPIO0          → (스트랩핀/BOOT, 미사용)
+                         OUT: LCD DC  GPIO9          ●──┤        ├──●  GPIO45         → (스트랩핀/VDD_SPI, 미사용)
+         OUT: LCD CS (FSPI 기본 CS0)  GPIO10         ●──┤        ├──●  GPIO48         → (온보드 WS2812 RGB LED 전용)
+     OUT: LCD DIN/MOSI (FSPI 기본핀)  GPIO11         ●──┤        ├──●  GPIO47         → (예비 핀)
+         OUT: LCD SCLK (FSPI 기본핀)  GPIO12         ●──┤        ├──●  GPIO21         → (예비 핀)
+ (예비, FSPI MISO 기본핀·LCD 미사용)  GPIO13         ●──┤        ├──●  GPIO20         → (USB D-, 사용금지)
+                        OUT: LCD RST  GPIO14         ●──┤        ├──●  GPIO19         → (USB D+, 사용금지)
+                                      5V             ●──┤        ├──●  GND
+                                      GND            ●──┤        ├──●  GND
+                                                     └[UART]──[USB]┘
+```
+
+
 
 핀 선택 이유 / 특정 핀 사용 주의사항
 
-1. UART 통신은 USB 시리얼(보통 GPIO1/3)과 분리하기 위해 UART2(GPIO16/17)를 사용. 단, ESP32-WROVER(PSRAM 내장) 모듈은 GPIO16/17이 내부 PSRAM 배선과 겹쳐 사용 불가하므로, 사용 중인 모듈이 WROOM인지 WROVER인지 먼저 확인할 것.
-2. 아날로그 입력은 ADC1(GPIO34/35)로 배치. ESP32는 Wi-Fi 활성 시 ADC2 정확도/사용 제한 이슈가 있어 ADC1이 안전.
-3. SPI OLED는 VSPI 기본 핀(18/23)을 사용하면 라이브러리 기본 설정과 맞아 초기 설정이 단순.
-4. WS2812는 타이밍에 민감하므로 다른 기능과 공유하지 않는 GPIO13에 단독 배치 권장 (GPIO13 자체가 하드웨어적으로 출력 전용인 것은 아니며, 이 프로젝트에서 WS2812 전용으로만 쓴다는 의미).
-5. I2S는 ESP32에서 핀 매핑이 비교적 자유롭지만, 부트 스트랩 핀(예: GPIO0/2/12/15)은 보드 상태에 영향 가능. 본 구성은 일반적으로 동작하지만, 부팅 불안정 시 LRCLK를 다른 일반 GPIO로 재배치.
-6. 두 보드 UART 연결 시 TX-RX 교차 연결, GND 공통, 전압 레벨(둘 다 3.3V 계열인지) 확인 필수.
-7. OLED CS(GPIO5)와 OLED RST(GPIO2)도 부트 스트래핑 핀에 해당. OLED 모듈의 리셋/CS 회로가 부팅 순간 핀 상태를 강제로 바꾸지 않는지(풀업/풀다운 저항값 등) 확인 필요.
-8. I2S DOUT(GPIO22)는 ESP32 기본 I2C(Wire) SCL 핀과 동일. 현재 I2C 미사용이라 문제없지만, 추후 I2C 센서를 추가하면 소프트웨어에서 I2C 핀을 다른 GPIO로 재매핑해야 함.
+1. 이 보드(N16R8)는 16MB 플래시 + 8MB 옥탈(Octal) PSRAM 구성으로, PSRAM용 추가 데이터 라인과 DQS 스트로브가 GPIO33~37에 내부 배선되어 있음. GPIO33/34는 아예 헤더로 나오지 않고, GPIO35/36/37은 헤더에 노출되어 있지만 실제로는 PSRAM 전용이라 GPIO로 재사용하면 PSRAM 접근이 깨져 보드가 멎을 수 있음 → 세 핀 모두 사용 금지. 같은 그룹에 인접한 GPIO38도 안전을 위해 예비로 비워둠.
+2. 조이스틱 아날로그 입력(X/Y)은 ADC1 전용 핀(GPIO4/5)에 배치. ESP32-S3도 클래식 ESP32와 동일하게 Wi-Fi 활성 시 ADC2 정확도/사용 제한 이슈가 있어 ADC1이 안전함. 같은 조이스틱 신호인 클릭 스위치(GPIO6)도 바로 옆 핀에 배치.
+3. GPIO0/3/45/46은 부팅 모드를 결정하는 스트랩핀(GPIO0: BOOT, GPIO3: JTAG 신호 소스 선택, GPIO45: VDD_SPI 전압 선택, GPIO46: ROM 메시지 출력 제어). 외부 소자가 부팅 순간 이 핀들의 전압을 강제로 바꾸면 오동작할 수 있어 미사용으로 비워둠.
+4. GPIO43/44는 보드 내장 USB-UART 브릿지(별도 USB-C "UART" 포트)가 사용하는 UART0(TXD0/RXD0) 고정 핀이라 시리얼 모니터/펌웨어 업로드 용도로 남겨두고 다른 용도로 쓰지 않음. GPIO19/20은 칩 내장 네이티브 USB(D-/D+)로 "USB" 포트에 연결되어 있어 마찬가지로 비워둠.
+5. GPIO48은 보드에 실장된 온보드 WS2812 RGB LED 전용 데이터 핀이라 외부 신호 용도로 재사용하지 않음. 외부 WS2812 라인은 별도 핀(GPIO8)을 사용.
+6. LCD는 SCLK(GPIO12)/MOSI(GPIO11)/CS(GPIO10)를 FSPI(ESP32-S3 기본 SPI) 하드웨어 기본 핀 그대로 사용하는 것을 최우선으로 함(라이브러리 하드웨어 SPI 그대로 사용 가능하고, CS까지 기본 핀에 맞출 수 있어 이전 클래식 ESP32 설계보다 배선이 더 단순함). DC/RST는 자유 GPIO라 이 블록 양옆의 GPIO9/14에 배치했으며, FSPI MISO 기본핀(GPIO13)은 LCD가 읽기 신호를 쓰지 않아 예비 핀으로 남김.
+7. 버튼 5개(GPIO7/15/16/17/18)와 조이스틱(GPIO4/5/6)은 보드 좌측 헤더에서 RST 이후로 물리적으로 연속된 핀에 몰아서 배치해 배선을 단순화. 기능적 제약이 없는 핀이라 인접 배치를 우선 적용.
+8. UART2(GPIO1/2)와 I2S(GPIO42/41/40)는 클래식 ESP32와 달리 ESP32-S3에서는 GPIO 매트릭스로 완전히 자유롭게 재배치 가능한 주변장치라 하드웨어로 고정된 핀이 아님. 남은 핀 중 보드 우측 헤더에서 서로 인접한 자리를 골라 배치했을 뿐 반드시 이 핀이어야 하는 것은 아님.
+9. WS2812는 타이밍에 민감하므로 다른 기능과 공유하지 않는 GPIO8에 단독 배치 권장.
+10. GPIO39(JTAG 예비), GPIO47, GPIO21은 하드웨어 제약이 없는 예비 핀으로 남겨둠. 추후 센서·가속도계 등 입력을 추가할 때 사용.
+11. 두 보드 UART 연결 시 TX-RX 교차 연결, GND 공통, 전압 레벨(둘 다 3.3V인지) 확인 필수.
 
 
 
@@ -134,7 +166,7 @@ i2s MAX98357A 모듈(앰프 포함) - 멀티트랙 재생 가능
 https://sfxr.me/
 
 
-tmr 조이스틱 사용시 xy - 아날로그 2, 스위치 1
+
 
 
 사운드
