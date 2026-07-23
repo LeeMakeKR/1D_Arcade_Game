@@ -28,7 +28,7 @@
 #include <Adafruit_NeoPixel.h>
 
 #define LED_PIN        8    // WS2812 데이터 핀(readme.md 배선 기준)
-#define NUM_LEDS_TOTAL 180  // 스위치 내장 LED 4개 + 라인 LED 176개
+#define NUM_LEDS_TOTAL 180  // 스위치 내장 LED 4개 + 라인 LED 176개  60개/1미터짜리를 3미터 구입후, 4개를 스위치용으로 분리하여 사용
 #define NUM_SWITCH_LEDS 4   // index 0~3: 스위치 1~4 내장 LED
 #define FIELD_START    NUM_SWITCH_LEDS         // 필드 첫 칸(플레이어 쪽 끝) = 4
 #define FIELD_END      (NUM_LEDS_TOTAL - 1)    // 필드 마지막 칸(지렁이 출현 쪽 끝) = 179
