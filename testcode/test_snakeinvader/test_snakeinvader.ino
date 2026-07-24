@@ -35,7 +35,7 @@
 
 #define DEBOUNCE_MS    30   // 스위치 채터링 무시 시간
 #define FLASH_MS       120  // 버튼을 눌렀을 때 해당 스위치 LED를 밝게 켜 두는 시간(시각 피드백)
-#define BRIGHTNESS     24   // 180개라 전류/눈부심 부담이 커서 낮게 고정
+#define BRIGHTNESS     255   // 180개라 전류/눈부심 부담이 커서 낮게 고정
 
 // ---- 난이도 변수 (Game_Logics.md: "길이/속도는 디버깅용 변수로 조정 가능") ----
 #define SNAKE_BASE_LEN        5     // 레벨 1 지렁이 길이(칸 수)
