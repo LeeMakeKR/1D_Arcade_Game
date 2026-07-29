@@ -5,7 +5,7 @@
 #define PIN_CS   10
 #define PIN_RST  14
 
-// 하드웨어 SPI(FSPI 기본 핀: SCLK GPIO12, MOSI GPIO11) 사용
+// 하드웨어 SPI 사용 (SCLK GPIO12, MOSI GPIO11)
 Adafruit_PCD8544 display(PIN_DC, PIN_CS, PIN_RST);
 
 const char MESSAGE[] = "Hello World";
@@ -14,8 +14,8 @@ uint16_t textWidth;
 
 void setup() {
   display.begin();
-  display.setRotation(2);  // 화면이 뒤집혀 보이면 180도 회전으로 보정
-  display.setContrast(19);
+  display.setRotation(2);  // 180도 회전 보정
+  display.setContrast(12);  // 대비(Contrast) 설정 (0-255)
   display.clearDisplay();
   display.display();
 

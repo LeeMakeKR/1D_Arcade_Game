@@ -118,7 +118,8 @@ uint32_t switchColor(uint8_t idx) {
     case 0: return strip.Color(255, 0, 0);       // R
     case 1: return strip.Color(0, 255, 0);       // G
     case 2: return strip.Color(0, 0, 255);       // B
-    default: return strip.Color(255, 255, 255);  // W
+    case 3: return strip.Color(255, 255, 255);   // W
+    default: return strip.Color(0, 0, 0);        // Off
   }
 }
 
@@ -130,21 +131,26 @@ void IRAM_ATTR handleSwitchInterrupt(void* arg) {
   lastChangeMs[idx] = millis();           // 디바운스 타이머 리셋
   checkPending[idx] = true;               // "나중에 loop()에서 이 스위치 다시 확인해줘" 표시
 }
+// WS2815 타이밍 안정화용 show 함수 (인터럽트 전역 차단 제거)
+void safeShow() {
+  strip.show();
+  delayMicroseconds(300); // WS2815 Reset Time (>=280us) 보장
+}
 
 // 전원 켜졌을 때 LED 4개를 한 개씩 순서대로 켰다가 전부 끄는 데모.
 // 배선/LED가 정상인지 눈으로 바로 확인할 수 있게 하기 위한 용도.
 void bootAnimation() {
   strip.clear();
-  strip.show();
+  safeShow();
 
   for (uint8_t i = 0; i < NUM_LEDS; i++) {
     strip.setPixelColor(i, switchColor(i));
-    strip.show();
+    safeShow();
     delay(BOOT_STEP_MS);
   }
 
   strip.clear();
-  strip.show();
+  safeShow();
 }
 
 // 현재 상태(switch5State, lastPressedNum, lastWavName)를 LCD에 다시 그린다.
@@ -330,9 +336,9 @@ void setup() {
   }
 
   strip.begin();
-  strip.setBrightness(18);  // 눈부심 방지를 위해 밝기를 낮게 고정
+  strip.setBrightness(200);  // 밝기 설정
   strip.clear();
-  strip.show();
+  safeShow();
 
   bootAnimation();  // 인터럽트를 걸기 전에 먼저 실행 - 초기화 도중 스위치 신호로 오작동하는 것을 방지
 
@@ -375,7 +381,7 @@ void loop() {
           if (pressed) {
             uint32_t color = switchColor(i);
             strip.setPixelColor(i, color);
-            strip.show();
+            safeShow();
             ledOn[i] = true;
             ledOffAt[i] = now + FLASH_MS;  // FLASH_MS 뒤에 꺼지도록 예약(아래 소등 처리 블록에서 실행)
 
@@ -395,7 +401,7 @@ void loop() {
   for (uint8_t i = 0; i < NUM_LEDS; i++) {
     if (ledOn[i] && now >= ledOffAt[i]) {
       strip.setPixelColor(i, strip.Color(0, 0, 0));
-      strip.show();
+      safeShow();
       ledOn[i] = false;
     }
   }

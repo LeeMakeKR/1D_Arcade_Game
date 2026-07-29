@@ -35,14 +35,6 @@
        테이블 파일을 만들어 두었다. spiffs 파티션 하나만 깔끔하게
        정의되어 있어서, 이름이 겹치는 파티션이 있는 기본 제공 스킴들에서
        발생하는 문제를 피할 수 있다.
-       (시행착오 기록: "16M Flash (.../FATFS)" 계열은 파티션 이름이
-        "ffat"라서 arduino-littlefs-upload 플러그인이 "spiffs" 이름의
-        파티션을 못 찾아 에러가 났고, "ESP SR 16M" 스킴은 spiffs/model
-        두 파티션이 둘 다 서브타입 "spiffs"라 플러그인이 엉뚱한 쪽(model)에
-        업로드해버려 정작 코드가 마운트하는 spiffs 파티션은 비어 있었다.
-        거기다 ESP SR 스킴은 음성인식 라이브러리 전용이라 일반 스케치
-        업로드 시 srmodels.bin을 요구하며 또 에러가 났다. 그래서 커스텀
-        테이블로 교체함)
      - Board: 사용 중인 ESP32-S3 보드 (예: "ESP32S3 Dev Module")
      - Flash Size: 16MB (WeAct N16R8 기준)
      - Partition Scheme: "Custom" 선택 → 위 05test_wavplay.csv가 자동 적용됨

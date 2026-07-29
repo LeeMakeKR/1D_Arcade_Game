@@ -1,15 +1,14 @@
-ws2812 line led 를 사용한 1d arcade 게임기 제작 프로젝트
+ws2815 line led 를 사용한 1d arcade 게임기 제작 프로젝트
 
 
 하드웨어
-RGB LED (ws2812 line led)
+RGB LED (ws2815 line led, 12V — 데이터 프로토콜은 ws2812 호환)
 RGB 스위치 (3개 혹은 4개)
 스피커 - 앰프 등 아두이노에서 소리 재생가능한 모듈
  - 멀티트랙 재생이 가능해야 함
 
 하드웨어 구성
-2개의 시스템이 항공잭으로 연결됨 
-(길이에 따른 전압 강하 체크할것)
+2개의 시스템이 ESP-NOW 무선 통신으로 연결됨 2p는 항공잭을 통해 전원을 1p로부터 공급받음. 
 i2s MAX98357A 모듈(앰프 포함) - 멀티트랙 재생 가능
 
 
@@ -28,10 +27,11 @@ i2s MAX98357A 모듈(앰프 포함) - 멀티트랙 재생 가능
 
 [출력]
 
-- WS2812 데이터: GPIO8
+- WS2815 데이터(DI): GPIO8
+- WS2815 백업 데이터(BI): GPIO 연결 불필요 — 스트립 입구에서 GND에 연결(플로팅 금지)
 - Nokia 5110 LCD: DC GPIO9, CS GPIO10(FSPI 하드웨어 기본 CS0), DIN(MOSI) GPIO11(FSPI 하드웨어 기본 핀), SCLK GPIO12(FSPI 하드웨어 기본 핀), RST GPIO14
-- UART2 (보드 간 통신): TX GPIO1, RX GPIO2
 - I2S MAX98357A (앰프): BCLK GPIO42, LRCLK(WS) GPIO41, DOUT GPIO40
+- 보드 간 통신: ESP-NOW 무선 (UART 배선 없음)
 
 
 핀아웃 다이어그램 (WeAct ESP32-S3 N16R8 DevKitC-1, mischianti 핀아웃 이미지 배치 기준)
@@ -41,15 +41,15 @@ i2s MAX98357A 모듈(앰프 포함) - 멀티트랙 재생 가능
                                       3V3            ●──┤        ├──●  GND
                                       3V3            ●──┤        ├──●  GPIO43         → (USB-UART TXD0, 사용금지)
                                       RST            ●──┤        ├──●  GPIO44         → (USB-UART RXD0, 사용금지)
-           IN: 조이스틱 X (ADC1_CH3)  GPIO4          ●──┤        ├──●  GPIO1          → OUT: UART2 TX
-           IN: 조이스틱 Y (ADC1_CH4)  GPIO5          ●──┤        ├──●  GPIO2          → OUT: UART2 RX
+           IN: 조이스틱 X (ADC1_CH3)  GPIO4          ●──┤        ├──●  GPIO1          → (예비 핀)
+           IN: 조이스틱 Y (ADC1_CH4)  GPIO5          ●──┤        ├──●  GPIO2          → (예비 핀)
             IN: 조이스틱 클릭 스위치  GPIO6          ●──┤        ├──●  GPIO42         → OUT: I2S BCLK
                            IN: 버튼1  GPIO7          ●──┤        ├──●  GPIO41         → OUT: I2S LRCLK(WS)
                            IN: 버튼2  GPIO15         ●──┤        ├──●  GPIO40         → OUT: I2S DOUT
                            IN: 버튼3  GPIO16         ●──┤        ├──●  GPIO39         → (JTAG 예비핀, 미사용)
                            IN: 버튼4  GPIO17         ●──┤        ├──●  GPIO38         → (옥탈 PSRAM 내부용, 사용금지)
                            IN: 버튼5  GPIO18         ●──┤        ├──●  GPIO37         → (옥탈 PSRAM 내부용, 사용금지)
-                    OUT: WS2812 DATA  GPIO8          ●──┤        ├──●  GPIO36         → (옥탈 PSRAM 내부용, 사용금지)
+                    OUT: WS2815 DATA  GPIO8          ●──┤        ├──●  GPIO36         → (옥탈 PSRAM 내부용, 사용금지)
              (스트랩핀/JTAG, 미사용)  GPIO3          ●──┤        ├──●  GPIO35         → (옥탈 PSRAM 내부용, 사용금지)
                   (스트랩핀, 미사용)  GPIO46         ●──┤        ├──●  GPIO0          → (스트랩핀/BOOT, 미사용)
                          OUT: LCD DC  GPIO9          ●──┤        ├──●  GPIO45         → (스트랩핀/VDD_SPI, 미사용)
@@ -58,7 +58,7 @@ i2s MAX98357A 모듈(앰프 포함) - 멀티트랙 재생 가능
          OUT: LCD SCLK (FSPI 기본핀)  GPIO12         ●──┤        ├──●  GPIO21         → (예비 핀)
  (예비, FSPI MISO 기본핀·LCD 미사용)  GPIO13         ●──┤        ├──●  GPIO20         → (USB D-, 사용금지)
                         OUT: LCD RST  GPIO14         ●──┤        ├──●  GPIO19         → (USB D+, 사용금지)
-                                      5V             ●──┤        ├──●  GND
+                                      5V             ●──┤         ├──●  GND
                                       GND            ●──┤        ├──●  GND
                                                      └[UART]──[USB]┘
 ```

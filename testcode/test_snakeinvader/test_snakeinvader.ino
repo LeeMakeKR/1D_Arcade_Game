@@ -3,7 +3,7 @@
   Game_Logics.md / games.md의 Snake Invader 규칙을 실제 하드웨어에서 돌려보기 위한
   용도라서 사운드 재생, LCD 표시, 메뉴/모드 선택은 전부 뺐다. 항상 1P로 바로 시작한다.
 
-  LED 구성: 스위치 1~4에 내장된 WS2812 4개 + 그 뒤로 이어붙인 176개 라인 LED가
+  LED 구성: 스위치 1~4에 내장된 WS281x 4개 + 그 뒤로 이어붙인 WS2815 라인 LED 176개가
   전기적으로 한 줄(GPIO8)로 연결되어 있어 총 180개다.
     - index 0~3  : 스위치 1~4에 내장된 LED (버튼 색 표시용)
     - index 4~179: 실제 게임 필드(지렁이/총알이 움직이는 176칸)
@@ -27,7 +27,8 @@
 
 #include <Adafruit_NeoPixel.h>
 
-#define LED_PIN        8    // WS2812 데이터 핀(readme.md 배선 기준)
+#define LED_PIN        8    // WS2815 데이터 핀(readme.md 배선 기준, 프로토콜은 WS2812 호환)
+#define LED_TYPE   (NEO_GRB + NEO_KHZ800)  // WS2812/WS2815 공용 800KHz 1-wire 프로토콜
 #define NUM_LEDS_TOTAL 180  // 스위치 내장 LED 4개 + 라인 LED 176개  60개/1미터짜리를 3미터 구입후, 4개를 스위치용으로 분리하여 사용
 #define NUM_SWITCH_LEDS 4   // index 0~3: 스위치 1~4 내장 LED
 #define FIELD_START    NUM_SWITCH_LEDS         // 필드 첫 칸(플레이어 쪽 끝) = 4
@@ -48,7 +49,7 @@
 #define BULLET_SPEED          150.0f // 총알 속도(칸/초)
 #define MAX_BULLETS            8    // 동시 총알 개수 상한
 
-#define WHITE_UNLOCK_LEVEL      10  // 스위치3(White) 해금 레벨
+#define WHITE_UNLOCK_LEVEL      10  // 흰색 연출 레벨(색상 해금과는 무관)
 #define RGBW_RANDOM_LEVEL       20  // 이 레벨부터 매 레벨 스위치 색 랜덤 재배정
 
 #define COUNTDOWN_STEP_MS       1000 // 기본 "빨강*3 + 초록" 카운트다운 한 스텝당 유지 시간
@@ -60,10 +61,10 @@
 
 #define SWITCH_LED_BOOST         1.5f // 스위치 LED는 필드보다 눈에 잘 띄어야 해서 기본 밝기의 1.5배로 표시
 
-const uint8_t SWITCH_PINS[] = {7, 15, 16, 17};  // 스위치 1~4 (5번 모드 스위치는 이 테스트에서 미사용, 항상 1P)
+const uint8_t SWITCH_PINS[] = {7, 15, 16, 17};  // 스위치 0-3 (현재 배선 순서 0,1,2,3)
 const uint8_t NUM_SWITCHES = sizeof(SWITCH_PINS) / sizeof(SWITCH_PINS[0]);
 
-Adafruit_NeoPixel strip(NUM_LEDS_TOTAL, LED_PIN, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel strip(NUM_LEDS_TOTAL, LED_PIN, LED_TYPE);
 
 // 원색(풀 밝기) - 스위치 기본색/스네이크 세그먼트/총알에 사용
 const uint32_t COLOR_RED   = strip.Color(255, 0, 0);
@@ -118,19 +119,16 @@ Bullet bullets[MAX_BULLETS];
 
 uint32_t lastFrameMs = 0;
 
-// 레벨에 따른 기본 색 배정: 스위치1=Blue, 2=Green, 4=Red는 항상 고정, 스위치3은
-// WHITE_UNLOCK_LEVEL 이상일 때만 White로 해금된다(그 전엔 소등 + 입력 무시).
+// 기본 색 배정(요청 반영): 스위치 인덱스 0~3 = Red, Green, Blue, White 고정.
 void applyDefaultColors() {
-  currentSwitchColor[0] = COLOR_BLUE;
+  currentSwitchColor[0] = COLOR_RED;
   currentSwitchColor[1] = COLOR_GREEN;
-  currentSwitchColor[3] = COLOR_RED;
+  currentSwitchColor[2] = COLOR_BLUE;
+  currentSwitchColor[3] = COLOR_WHITE;
   switchUnlocked[0] = true;
   switchUnlocked[1] = true;
+  switchUnlocked[2] = true;
   switchUnlocked[3] = true;
-
-  bool whiteUnlocked = (level >= WHITE_UNLOCK_LEVEL);
-  currentSwitchColor[2] = whiteUnlocked ? COLOR_WHITE : 0;
-  switchUnlocked[2] = whiteUnlocked;
 }
 
 // 레벨 20 이후: 4개 스위치에 R/G/B/W를 겹치지 않게 무작위로 재배정(Fisher-Yates 셔플).
@@ -174,7 +172,7 @@ void standardCountdown() {
 }
 
 // 레벨 10 진입 시 1회성 연출: 필드 반대편(먼 쪽, FIELD_END)에서 플레이어 쪽으로
-// 흰색이 쭉 채워지고, 다 채워지면 새로 해금된 스위치3이 흰색으로 5회 점멸한다.
+// 흰색이 쭉 채워지고, 다 채워지면 White 스위치(index 3)가 5회 점멸한다.
 void whiteUnlockSweepAndBlink() {
   for (int16_t i = FIELD_END; i >= (int16_t)FIELD_START; i--) {
     strip.setPixelColor(i, COLOR_WHITE);
@@ -183,10 +181,10 @@ void whiteUnlockSweepAndBlink() {
   }
 
   for (uint8_t b = 0; b < SWITCH_UNLOCK_BLINK_TIMES; b++) {
-    strip.setPixelColor(2, COLOR_WHITE);
+    strip.setPixelColor(3, COLOR_WHITE);
     strip.show();
     delay(SWITCH_UNLOCK_BLINK_MS);
-    strip.setPixelColor(2, 0);
+    strip.setPixelColor(3, 0);
     strip.show();
     delay(SWITCH_UNLOCK_BLINK_MS);
   }
@@ -220,8 +218,6 @@ void spawnWave() {
   if (snakeSpeed > SNAKE_MAX_SPEED) snakeSpeed = SNAKE_MAX_SPEED;
 
   headPos = (float)(FIELD_END - (snakeCount - 1));  // 꼬리(마지막 세그먼트)가 정확히 FIELD_END에 위치
-
-  Serial.printf("WAVE START level=%d len=%d speed=%.1f\n", level, snakeCount, snakeSpeed);
 }
 
 // 이번 레벨에 맞는 시작 연출(기본 카운트다운 / 흰색 해금 / RGBW 재배정)을 먼저 재생한 뒤 스폰한다.
@@ -295,12 +291,12 @@ void resetGame() {
 }
 
 // 전원 켜졌을 때 스위치 LED 4개를 순서대로 켜 하드웨어가 정상인지 눈으로 확인하는 데모.
-// 게임의 색 해금 상태와 무관하게 항상 4개 전부(Blue/Green/White/Red) 점검한다.
+// 게임의 색 해금 상태와 무관하게 항상 4개 전부(Red/Green/Blue/White) 점검한다.
 void bootAnimation() {
   strip.clear();
   strip.show();
 
-  const uint32_t demoColors[NUM_SWITCH_LEDS] = {COLOR_BLUE, COLOR_GREEN, COLOR_WHITE, COLOR_RED};
+  const uint32_t demoColors[NUM_SWITCH_LEDS] = {COLOR_RED, COLOR_GREEN, COLOR_BLUE, COLOR_WHITE};
   for (uint8_t i = 0; i < NUM_SWITCH_LEDS; i++) {
     strip.setPixelColor(i, demoColors[i]);
     strip.show();
@@ -313,7 +309,6 @@ void bootAnimation() {
 }
 
 void setup() {
-  Serial.begin(115200);
   randomSeed(esp_random());
 
   for (uint8_t i = 0; i < NUM_SWITCHES; i++) {
@@ -330,7 +325,8 @@ void setup() {
   resetGame();
 
   for (uint8_t i = 0; i < NUM_SWITCHES; i++) {
-    attachInterruptArg(SWITCH_PINS[i], handleSwitchInterrupt, (void*)(uintptr_t)i, CHANGE);
+    // FALLING만 사용해 릴리즈 엣지/노이즈에 의한 ISR 과다 발생을 줄인다.
+    attachInterruptArg(SWITCH_PINS[i], handleSwitchInterrupt, (void*)(uintptr_t)i, FALLING);
   }
 
   lastFrameMs = millis();
@@ -344,6 +340,14 @@ void loop() {
 
   // ---- 스위치 입력: 디바운스 후 확정된 눌림만 발사로 처리(잠긴 스위치는 무시) ----
   for (uint8_t i = 0; i < NUM_SWITCHES; i++) {
+    if (checkPending[i]) {
+      bool pressedNow = (digitalRead(SWITCH_PINS[i]) == LOW);
+      if (pressedNow && switchUnlocked[i] && !switchPressed[i] && !switchFlashOn[i]) {
+        switchFlashOn[i] = true;
+        switchFlashOffAt[i] = now + FLASH_MS;
+      }
+    }
+
     if (checkPending[i] && (now - lastChangeMs[i] >= DEBOUNCE_MS)) {
       checkPending[i] = false;
 
@@ -382,12 +386,10 @@ void loop() {
         if (bullets[i].color == snakeColors[0]) {
           score += 10;
           removeSnakeHead();
-          Serial.printf("HIT score=%d remain=%d\n", score, snakeCount);
           if (snakeCount == 0) break;  // 이번 프레임에 더 처리할 세그먼트 없음
         } else {
           snakeSpeed *= SNAKE_MISS_ACCEL;
           if (snakeSpeed > SNAKE_MAX_SPEED) snakeSpeed = SNAKE_MAX_SPEED;
-          Serial.println("MISS (color mismatch) - snake accelerated");
         }
       }
     }
@@ -399,7 +401,6 @@ void loop() {
     level++;
     beginLevel();  // 다음 레벨의 시작 연출(카운트다운/해금/색 재배정) 후 스폰
   } else if (headPos <= (float)FIELD_START) {
-    Serial.printf("GAME OVER final score=%d\n", score);
     flashField(GAME_OVER_FLASH_COLOR, 3, 200);  // 게임오버 피드백
     resetGame();
   }
