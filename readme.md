@@ -29,7 +29,10 @@ i2s MAX98357A 모듈(앰프 포함) - 멀티트랙 재생 가능
 
 - WS2815 데이터(DI): GPIO8
 - WS2815 백업 데이터(BI): GPIO 연결 불필요 — 스트립 입구에서 GND에 연결(플로팅 금지)
-- Nokia 5110 LCD: DC GPIO9, CS GPIO10(FSPI 하드웨어 기본 CS0), DIN(MOSI) GPIO11(FSPI 하드웨어 기본 핀), SCLK GPIO12(FSPI 하드웨어 기본 핀), RST GPIO14
+- ST7735 TFT LCD (128x160, 4-wire SPI): RS(=DC) GPIO9, CS GPIO10(FSPI 하드웨어 기본 CS0), SDA(=MOSI) GPIO11(FSPI 하드웨어 기본 핀), CLK(=SCLK) GPIO12(FSPI 하드웨어 기본 핀), RST GPIO14, VCC 3.3V, GND GND
+  - 이전에 쓰던 Nokia 5110(84x48)과 배선이 1:1로 그대로 대치된다. 이름만 다를 뿐 같은 신호다: RS=DC, SDA=DIN, CLK=SCLK. 배선을 바꾸지 않고 모듈만 갈아끼우면 된다.
+  - 모듈에 백라이트 핀(BLK/LED)이 따로 나와 있는 버전이면 3.3V에 연결한다. 핀이 7개(VCC/GND/CLK/SDA/RS/RST/CS)뿐인 보드는 백라이트가 내부에서 VCC에 물려 있다.
+  - VCC는 3.3V 권장. 레귤레이터가 실장된 모듈이라 5V도 받지만, 로직 레벨 시프터가 없는 모듈에 5V를 넣으면 3.3V 신호가 불안정해질 수 있다.
 - I2S MAX98357A (앰프): BCLK GPIO42, LRCLK(WS) GPIO41, DOUT GPIO40
 - 보드 간 통신: ESP-NOW 무선 (UART 배선 없음)
 
@@ -52,10 +55,10 @@ i2s MAX98357A 모듈(앰프 포함) - 멀티트랙 재생 가능
                     OUT: WS2815 DATA  GPIO8          ●──┤        ├──●  GPIO36         → (옥탈 PSRAM 내부용, 사용금지)
              (스트랩핀/JTAG, 미사용)  GPIO3          ●──┤        ├──●  GPIO35         → (옥탈 PSRAM 내부용, 사용금지)
                   (스트랩핀, 미사용)  GPIO46         ●──┤        ├──●  GPIO0          → (스트랩핀/BOOT, 미사용)
-                         OUT: LCD DC  GPIO9          ●──┤        ├──●  GPIO45         → (스트랩핀/VDD_SPI, 미사용)
+                     OUT: LCD RS(DC)  GPIO9          ●──┤        ├──●  GPIO45         → (스트랩핀/VDD_SPI, 미사용)
          OUT: LCD CS (FSPI 기본 CS0)  GPIO10         ●──┤        ├──●  GPIO48         → (온보드 WS2812 RGB LED 전용)
-     OUT: LCD DIN/MOSI (FSPI 기본핀)  GPIO11         ●──┤        ├──●  GPIO47         → (예비 핀)
-         OUT: LCD SCLK (FSPI 기본핀)  GPIO12         ●──┤        ├──●  GPIO21         → (예비 핀)
+     OUT: LCD SDA/MOSI (FSPI 기본핀)  GPIO11         ●──┤        ├──●  GPIO47         → (예비 핀)
+     OUT: LCD CLK/SCLK (FSPI 기본핀)  GPIO12         ●──┤        ├──●  GPIO21         → (예비 핀)
  (예비, FSPI MISO 기본핀·LCD 미사용)  GPIO13         ●──┤        ├──●  GPIO20         → (USB D-, 사용금지)
                         OUT: LCD RST  GPIO14         ●──┤        ├──●  GPIO19         → (USB D+, 사용금지)
                                       5V             ●──┤         ├──●  GND
@@ -72,7 +75,7 @@ i2s MAX98357A 모듈(앰프 포함) - 멀티트랙 재생 가능
 3. GPIO0/3/45/46은 부팅 모드를 결정하는 스트랩핀(GPIO0: BOOT, GPIO3: JTAG 신호 소스 선택, GPIO45: VDD_SPI 전압 선택, GPIO46: ROM 메시지 출력 제어). 외부 소자가 부팅 순간 이 핀들의 전압을 강제로 바꾸면 오동작할 수 있어 미사용으로 비워둠.
 4. GPIO43/44는 보드 내장 USB-UART 브릿지(별도 USB-C "UART" 포트)가 사용하는 UART0(TXD0/RXD0) 고정 핀이라 시리얼 모니터/펌웨어 업로드 용도로 남겨두고 다른 용도로 쓰지 않음. GPIO19/20은 칩 내장 네이티브 USB(D-/D+)로 "USB" 포트에 연결되어 있어 마찬가지로 비워둠.
 5. GPIO48은 보드에 실장된 온보드 WS2812 RGB LED 전용 데이터 핀이라 외부 신호 용도로 재사용하지 않음. 외부 WS2812 라인은 별도 핀(GPIO8)을 사용.
-6. LCD는 SCLK(GPIO12)/MOSI(GPIO11)/CS(GPIO10)를 FSPI(ESP32-S3 기본 SPI) 하드웨어 기본 핀 그대로 사용하는 것을 최우선으로 함(라이브러리 하드웨어 SPI 그대로 사용 가능하고, CS까지 기본 핀에 맞출 수 있어 이전 클래식 ESP32 설계보다 배선이 더 단순함). DC/RST는 자유 GPIO라 이 블록 양옆의 GPIO9/14에 배치했으며, FSPI MISO 기본핀(GPIO13)은 LCD가 읽기 신호를 쓰지 않아 예비 핀으로 남김.
+6. LCD는 SCLK(GPIO12)/MOSI(GPIO11)/CS(GPIO10)를 FSPI(ESP32-S3 기본 SPI) 하드웨어 기본 핀 그대로 사용하는 것을 최우선으로 함(라이브러리 하드웨어 SPI 그대로 사용 가능하고, CS까지 기본 핀에 맞출 수 있어 이전 클래식 ESP32 설계보다 배선이 더 단순함). DC/RST는 자유 GPIO라 이 블록 양옆의 GPIO9/14에 배치했으며, FSPI MISO 기본핀(GPIO13)은 LCD가 읽기 신호를 쓰지 않아 예비 핀으로 남김. ST7735로 교체하면서도 이 배치를 그대로 유지함(ST7735의 RS/SDA/CLK가 각각 DC/MOSI/SCLK와 같은 신호라 배선 변경 없음). 다만 Nokia 5110(84x48 흑백, 프레임당 504바이트)과 달리 ST7735는 128x160x16bit라 전체 화면 한 장이 40KB이므로, SPI 클럭을 하드웨어 SPI 최대치(27~40MHz)로 올리고 화면 전체를 매번 다시 그리는 대신 바뀐 영역만 갱신하는 편이 좋음.
 7. 버튼 5개(GPIO7/15/16/17/18)와 조이스틱(GPIO4/5/6)은 보드 좌측 헤더에서 RST 이후로 물리적으로 연속된 핀에 몰아서 배치해 배선을 단순화. 기능적 제약이 없는 핀이라 인접 배치를 우선 적용.
 8. UART2(GPIO1/2)와 I2S(GPIO42/41/40)는 클래식 ESP32와 달리 ESP32-S3에서는 GPIO 매트릭스로 완전히 자유롭게 재배치 가능한 주변장치라 하드웨어로 고정된 핀이 아님. 남은 핀 중 보드 우측 헤더에서 서로 인접한 자리를 골라 배치했을 뿐 반드시 이 핀이어야 하는 것은 아님.
 9. WS2812는 타이밍에 민감하므로 다른 기능과 공유하지 않는 GPIO8에 단독 배치 권장.

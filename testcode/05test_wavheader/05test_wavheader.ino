@@ -43,18 +43,30 @@
 */
 
 #include <Adafruit_NeoPixel.h>  // WS2815 LED 스트립 제어
-#include <Adafruit_GFX.h>       // Adafruit_PCD8544가 상속하는 그래픽(텍스트/도형) 베이스 라이브러리
-#include <Adafruit_PCD8544.h>   // Nokia 5110 LCD(PCD8544 컨트롤러) 드라이버
-#include "SoundEngine.h"        // 플래시 PCM 멀티트랙 믹서 
+#include <Adafruit_GFX.h>       // Adafruit_ST7735가 상속하는 그래픽(텍스트/도형) 베이스 라이브러리
+#include <Adafruit_ST7735.h>    // ST7735 TFT LCD(128x160) 드라이버
+#include <SPI.h>
+#include "SoundEngine.h"        // 플래시 PCM 멀티트랙 믹서
 
 #define LED_PIN       8      // WS2812 데이터 핀 (readme.md 배선 기준)
 #define DEBOUNCE_MS   30     // 스위치 채터링(짧은 시간 내 여러 번 튀는 신호) 무시 시간
 #define FLASH_MS      300    // 버튼을 눌렀을 때 해당 LED를 켜 두는 시간(시각적 피드백용, 소리 길이와 무관)
 #define BOOT_STEP_MS  1000   // 부팅 애니메이션에서 LED 하나당 점등 유지 시간
 
-#define LCD_DC   9   // LCD Data/Command 선택 핀
+// ST7735 TFT LCD 핀 (5110과 같은 자리. RS=DC, SDA=MOSI, CLK=SCLK)
+#define LCD_DC   9   // ST7735의 RS 핀 (Data/Command 선택)
 #define LCD_CS   10  // LCD SPI Chip Select (FSPI 하드웨어 기본 CS0)
 #define LCD_RST  14  // LCD 하드웨어 리셋 핀
+#define LCD_SDA  11  // = MOSI (FSPI 하드웨어 기본 핀)
+#define LCD_CLK  12  // = SCLK (FSPI 하드웨어 기본 핀)
+
+#define LCD_W        160
+#define LCD_H        128
+#define LCD_ROTATION 3          // 0,2 = 세로(128x160) / 1,3 = 가로(160x128)
+#define LCD_SPI_HZ   24000000   // 40MHz는 화면 아래쪽이 깨진다(01test_ST7735 주석 참고)
+
+// 라이브러리에 회색 상수가 없어 직접 정의(RGB565 50% 회색). 구분선/비활성 글자용
+#define LCD_GREY     0x7BEF
 
 #define I2S_BCLK_PIN  42  // I2S 비트클럭 (MAX98357A BCLK)
 #define I2S_LRC_PIN   41  // I2S 워드셀렉트/좌우채널클럭 (MAX98357A LRCLK)
@@ -66,7 +78,32 @@ const uint8_t SWITCH_PINS[] = {7, 15, 16, 17};
 const uint8_t NUM_SWITCHES = sizeof(SWITCH_PINS) / sizeof(SWITCH_PINS[0]);
 
 Adafruit_NeoPixel strip(NUM_SWITCHES, LED_PIN, NEO_GRB + NEO_KHZ800);  // WS2815 4개 제어 객체
-Adafruit_PCD8544 display(LCD_DC, LCD_CS, LCD_RST);  // 하드웨어 SPI(FSPI 기본 핀: MOSI11/SCLK12) 사용
+
+// 하드웨어 SPI 생성자는 5110과 인자 순서가 다르다: (CS, DC, RST)
+Adafruit_ST7735 tft = Adafruit_ST7735(LCD_CS, LCD_DC, LCD_RST);
+
+// 5110은 라이브러리가 프레임버퍼를 들고 있어서 clearDisplay()로 지우고 display()로 한 번에
+// 내보내는 방식이었다. ST7735에는 프레임버퍼가 없어 화면에 직접 그리면 깜빡이므로, 같은 크기의
+// 캔버스에 그린 뒤 통째로 전송한다. 덕분에 그리는 코드는 5110 때와 똑같이 쓸 수 있다.
+class Lcd : public GFXcanvas16 {
+public:
+  Lcd() : GFXcanvas16(LCD_W, LCD_H) {}
+  void begin() {
+    SPI.begin(LCD_CLK, -1, LCD_SDA, LCD_CS);   // MISO는 LCD가 쓰지 않아 -1
+    tft.initR(INITR_BLACKTAB);
+    tft.setSPISpeed(LCD_SPI_HZ);
+    tft.setRotation(LCD_ROTATION);
+    tft.fillScreen(ST77XX_BLACK);
+  }
+  void clearDisplay() { fillScreen(ST77XX_BLACK); }
+  // 40KB(160x128x2) 전송이라 24MHz에서 약 14ms 걸린다. 매 loop마다 부르지 말 것.
+  void display() { tft.drawRGBBitmap(0, 0, getBuffer(), LCD_W, LCD_H); }
+};
+
+Lcd display;
+
+// 스위치 1~4에 대응하는 LCD 표시색(LED 색과 같은 순서)
+const uint16_t SWITCH_TEXT_COLORS[4] = {ST77XX_RED, ST77XX_GREEN, ST77XX_BLUE, ST77XX_WHITE};
 
 // 아래 2개 배열은 ISR이 쓰고 loop()가 읽는 값이라 volatile 필요
 // (컴파일러가 최적화 과정에서 값이 안 바뀐다고 착각해 캐싱해버리는 걸 방지)
@@ -131,20 +168,36 @@ void bootAnimation() {
 //   3줄: 마지막으로 재생 요청한 사운드 이름
 void redrawLCD() {
   display.clearDisplay();
+  display.setTextSize(2);
 
+  display.setTextColor(ST77XX_CYAN);
   display.setCursor(0, 0);
   display.print(pcmInfo);
 
-  display.setCursor(0, 16);
+  display.drawFastHLine(0, 24, LCD_W, LCD_GREY);
+
+  display.setTextColor(ST77XX_WHITE);
+  display.setCursor(0, 34);
   display.print("V:");
   display.print(shownVoices);
   if (lastPressedNum > 0) {
     display.print(" SW:");
+    display.setTextColor(SWITCH_TEXT_COLORS[lastPressedNum - 1]);
     display.print(lastPressedNum);
   }
 
-  display.setCursor(0, 32);
+  // 사운드 이름은 최대 12자 정도라 크기 2(글자폭 12px)로 화면 폭에 딱 들어간다
+  display.setTextColor(ST77XX_YELLOW);
+  display.setCursor(0, 62);
   display.print(lastSoundName);
+
+  // 동시 재생 슬롯을 칸으로 표시 - 멀티트랙이 실제로 겹쳐 도는지 한눈에 보인다
+  const int16_t boxW = LCD_W / SOUND_MAX_VOICES;
+  for (uint8_t i = 0; i < SOUND_MAX_VOICES; i++) {
+    int16_t x = i * boxW;
+    if (i < shownVoices) display.fillRect(x + 2, 98, boxW - 4, 26, ST77XX_GREEN);
+    else                 display.drawRect(x + 2, 98, boxW - 4, 26, LCD_GREY);
+  }
 
   display.display();
 }
@@ -165,10 +218,8 @@ void setup() {
   snprintf(pcmInfo, sizeof(pcmInfo), "PCM %uK", soundTotalBytes() / 1024);
 
   display.begin();
-  display.setRotation(2);   // 실제 장착 방향이 뒤집혀 있어서 180도 보정
-  display.setContrast(20);
-  display.setTextSize(1);
-  display.setTextColor(BLACK);
+  display.setTextSize(2);
+  display.setTextColor(ST77XX_WHITE);
 
   bootAnimation();  // 인터럽트를 걸기 전에 실행 - 초기화 도중 스위치 신호로 오작동하는 것을 방지
   redrawLCD();

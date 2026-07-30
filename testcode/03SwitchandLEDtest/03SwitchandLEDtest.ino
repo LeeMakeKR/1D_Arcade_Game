@@ -1,6 +1,7 @@
 #include <Adafruit_NeoPixel.h>
 #include <Adafruit_GFX.h>
-#include <Adafruit_PCD8544.h>
+#include <Adafruit_ST7735.h>
+#include <SPI.h>
 
 // LED 점등/소등 상태 관리
 #define LED_PIN       8
@@ -11,10 +12,20 @@
 // 부팅 애니메이션 간격 (ms)
 #define BOOT_STEP_MS  1000
 
-// LCD 핀 설정
-#define LCD_DC   9
+// ST7735 TFT LCD 핀 설정 (5110과 같은 자리. RS=DC, SDA=MOSI, CLK=SCLK)
+#define LCD_DC   9    // ST7735의 RS 핀
 #define LCD_CS   10
 #define LCD_RST  14
+#define LCD_SDA  11   // = MOSI (FSPI 하드웨어 기본 핀)
+#define LCD_CLK  12   // = SCLK (FSPI 하드웨어 기본 핀)
+
+#define LCD_W        160
+#define LCD_H        128
+#define LCD_ROTATION 3          // 0,2 = 세로(128x160) / 1,3 = 가로(160x128)
+#define LCD_SPI_HZ   24000000   // 40MHz는 화면 아래쪽이 깨진다(01test_ST7735 주석 참고)
+
+// 라이브러리에 회색 상수가 없어 직접 정의(RGB565 50% 회색). 구분선/비활성 글자용
+#define LCD_GREY     0x7BEF
 
 // 스위치 1~4: LED 매칭, 5번: LCD 전용
 const uint8_t SWITCH_PINS[] = {7, 15, 16, 17, 18};
@@ -25,8 +36,30 @@ const uint8_t NUM_LEDS = 4;
 
 // NeoPixel 스트립 객체
 Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
+
+// 하드웨어 SPI 생성자는 5110과 인자 순서가 다르다: (CS, DC, RST)
+Adafruit_ST7735 tft = Adafruit_ST7735(LCD_CS, LCD_DC, LCD_RST);
+
+// 5110은 라이브러리가 프레임버퍼를 들고 있어서 clearDisplay()로 지우고 display()로 한 번에
+// 내보내는 방식이었다. ST7735에는 프레임버퍼가 없어 화면에 직접 그리면 깜빡이므로, 같은 크기의
+// 캔버스에 그린 뒤 통째로 전송한다. 덕분에 그리는 코드는 5110 때와 똑같이 쓸 수 있다.
+class Lcd : public GFXcanvas16 {
+public:
+  Lcd() : GFXcanvas16(LCD_W, LCD_H) {}
+  void begin() {
+    SPI.begin(LCD_CLK, -1, LCD_SDA, LCD_CS);   // MISO는 LCD가 쓰지 않아 -1
+    tft.initR(INITR_BLACKTAB);
+    tft.setSPISpeed(LCD_SPI_HZ);
+    tft.setRotation(LCD_ROTATION);
+    tft.fillScreen(ST77XX_BLACK);
+  }
+  void clearDisplay() { fillScreen(ST77XX_BLACK); }
+  // 40KB(160x128x2) 전송이라 24MHz에서 약 14ms 걸린다. 매 loop마다 부르지 말 것.
+  void display() { tft.drawRGBBitmap(0, 0, getBuffer(), LCD_W, LCD_H); }
+};
+
 // LCD 객체
-Adafruit_PCD8544 display(LCD_DC, LCD_CS, LCD_RST);
+Lcd display;
 
 // ISR과 loop() 공유 변수 (volatile)
 volatile bool switchPressed[NUM_SWITCHES] = {false};
@@ -90,27 +123,36 @@ void bootAnimation() {
 // LCD 화면 업데이트 함수 (5번 상태, 마지막 스위치 번호 및 색상 표시)
 void redrawLCD() {
   display.clearDisplay();
+  display.setTextSize(2);
 
-  // 상단: 5번 스위치 상태 표시
+  // 상단: 5번 스위치 상태 표시(ON = 초록, OFF = 회색)
   display.setCursor(0, 0);
-  display.print("SW5: ");
+  display.setTextColor(ST77XX_WHITE);
+  display.print("SW5:");
+  display.setTextColor(switch5State ? LCD_GREY : ST77XX_GREEN);
   display.print(switch5State ? "OFF" : "ON");
 
-  // 하단: 마지막 스위치 번호 표시
-  display.setCursor(0, 16);
+  display.drawFastHLine(0, 24, LCD_W, LCD_GREY);
+
+  // 가운데: 마지막 스위치 번호 표시
+  display.setTextColor(ST77XX_WHITE);
+  display.setCursor(0, 36);
   if (lastPressedNum > 0) {
     display.print("SW: ");
     display.print(lastPressedNum);
   }
 
-  // 하단 둘째 줄: RGB 색상 값 표시
-  display.setCursor(0, 32);
+  // 그 아래: RGB 색상 값 + 실제 색을 띠로 표시
+  // (LED에 보낸 값과 LCD에 뜬 색이 같은지 눈으로 대조할 수 있다)
+  display.setCursor(0, 64);
   if (lastPressedNum > 0) {
     display.print(lastR);
     display.print(",");
     display.print(lastG);
     display.print(",");
     display.print(lastB);
+
+    display.fillRect(0, 92, LCD_W, 36, tft.color565(lastR, lastG, lastB));
   }
 
   display.display();
@@ -134,10 +176,8 @@ void setup() {
 
   // LCD 초기화
   display.begin();
-  display.setRotation(2);
-  display.setContrast(12);
-  display.setTextSize(1);
-  display.setTextColor(BLACK);
+  display.setTextSize(2);
+  display.setTextColor(ST77XX_WHITE);
   redrawLCD();
 
   // 모든 스위치 인터럽트 설정

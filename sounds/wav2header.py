@@ -88,6 +88,8 @@ OUT_DIR_DEFAULT = os.path.join(SCRIPT_DIR, "header")
 # 사운드를 쓰는 스케치를 새로 만들면 이 목록에 그 경로를 추가하면 된다.
 COPY_TO = [
     os.path.join("..", "testcode", "05test_wavheader", "sounds"),
+    os.path.join("..", "testcode", "08test2P-SoundSwitchLED", "sounds"),
+    os.path.join("..", "testcode", "09test2P-pong", "sounds"),
 ]
 
 

@@ -1,25 +1,61 @@
 #include <Adafruit_GFX.h>
-#include <Adafruit_PCD8544.h>
+#include <Adafruit_ST7735.h>
+#include <SPI.h>
 
 // 스위치 디바운스 시간
 #define DEBOUNCE_MS  30
 
-// Nokia 5110 LCD 핀 설정 (하드웨어 고정값)
-#define LCD_DC   9
+// ST7735 TFT LCD 핀 설정 (5110과 같은 자리. RS=DC, SDA=MOSI, CLK=SCLK)
+#define LCD_DC   9    // ST7735의 RS 핀
 #define LCD_CS   10
 #define LCD_RST  14
+#define LCD_SDA  11   // = MOSI (FSPI 하드웨어 기본 핀)
+#define LCD_CLK  12   // = SCLK (FSPI 하드웨어 기본 핀)
 
-// LCD 하단 영역(1~4번 스위치 표시용) 기준 좌표
-#define LCD_BOTTOM_AREA_Y 10
-#define LCD_BOTTOM_AREA_H  38
+#define LCD_W        160
+#define LCD_H        128
+#define LCD_ROTATION 3          // 0,2 = 세로(128x160) / 1,3 = 가로(160x128)
+#define LCD_SPI_HZ   24000000   // 40MHz는 화면 아래쪽이 깨진다(01test_ST7735 주석 참고)
+
+// 라이브러리에 회색 상수가 없어 직접 정의(RGB565 50% 회색). 구분선/비활성 글자용
+#define LCD_GREY     0x7BEF
+
+// LCD 하단 영역(1~4번 스위치 번호 표시용) 기준 좌표
+#define LCD_BOTTOM_AREA_Y  28
+#define LCD_BOTTOM_AREA_H  (LCD_H - LCD_BOTTOM_AREA_Y)
+#define BIG_TEXT_SIZE      8    // 기본 폰트 6x8px의 배수 → 48x64px
 
 // 스위치 핀 목록 (1~4: 메인 스위치, 5: 상태표시 전용)
 const uint8_t SWITCH_PINS[] = {7, 15, 16, 17, 18};
 // 스위치 개수 자동 계산
 const uint8_t NUM_SWITCHES = sizeof(SWITCH_PINS) / sizeof(SWITCH_PINS[0]);
 
+// 하드웨어 SPI 생성자는 5110과 인자 순서가 다르다: (CS, DC, RST)
+Adafruit_ST7735 tft = Adafruit_ST7735(LCD_CS, LCD_DC, LCD_RST);
+
+// 5110은 라이브러리가 프레임버퍼를 들고 있어서 clearDisplay()로 지우고 display()로 한 번에
+// 내보내는 방식이었다. ST7735에는 프레임버퍼가 없어 화면에 직접 그리면 깜빡이므로, 같은 크기의
+// 캔버스에 그린 뒤 통째로 전송한다. 덕분에 그리는 코드는 5110 때와 똑같이 쓸 수 있다.
+class Lcd : public GFXcanvas16 {
+public:
+  Lcd() : GFXcanvas16(LCD_W, LCD_H) {}
+  void begin() {
+    SPI.begin(LCD_CLK, -1, LCD_SDA, LCD_CS);   // MISO는 LCD가 쓰지 않아 -1
+    tft.initR(INITR_BLACKTAB);
+    tft.setSPISpeed(LCD_SPI_HZ);
+    tft.setRotation(LCD_ROTATION);
+    tft.fillScreen(ST77XX_BLACK);
+  }
+  void clearDisplay() { fillScreen(ST77XX_BLACK); }
+  // 40KB(160x128x2) 전송이라 24MHz에서 약 14ms 걸린다. 매 loop마다 부르지 말 것.
+  void display() { tft.drawRGBBitmap(0, 0, getBuffer(), LCD_W, LCD_H); }
+};
+
 // LCD 제어 객체
-Adafruit_PCD8544 display(LCD_DC, LCD_CS, LCD_RST);
+Lcd display;
+
+// 스위치 1~4에 대응하는 색(다른 테스트 스케치와 같은 순서)
+const uint16_t SWITCH_COLORS[4] = {ST77XX_RED, ST77XX_GREEN, ST77XX_BLUE, ST77XX_WHITE};
 
 // ISR과 loop() 공유 변수 (최적화 방지 volatile 선언)
 volatile bool switchPressed[NUM_SWITCHES] = {false}; // 스위치 확정 상태
@@ -42,7 +78,7 @@ void drawCenteredLargeText(const char* text) {
   int16_t x1, y1;
   uint16_t w, h;
 
-  display.setTextSize(4);
+  display.setTextSize(BIG_TEXT_SIZE);
   display.getTextBounds(text, 0, 0, &x1, &y1, &w, &h);
 
   // 중앙 배치 좌표 계산
@@ -63,14 +99,19 @@ void redrawLCD() {
 
   display.clearDisplay();
 
-  // 상단: 5번 스위치 상태 표시
-  display.setTextSize(1);
+  // 상단: 5번 스위치 상태 표시(ON = 초록, OFF = 회색)
+  display.setTextSize(2);
   display.setCursor(0, 0);
-  display.print("SW5: ");
+  display.setTextColor(ST77XX_WHITE);
+  display.print("SW5:");
+  display.setTextColor(switch5State ? LCD_GREY : ST77XX_GREEN);
   display.print(switch5State ? "OFF" : "ON");
 
-  // 하단: 메인 스위치 번호 표시
+  display.drawFastHLine(0, LCD_BOTTOM_AREA_Y - 6, LCD_W, LCD_GREY);
+
+  // 하단: 마지막으로 누른 메인 스위치 번호를 그 스위치 색으로 크게 표시
   if (lastPressedMainSwitch > 0) {
+    display.setTextColor(SWITCH_COLORS[lastPressedMainSwitch - 1]);
     drawCenteredLargeText(bigText);
   }
 
@@ -85,10 +126,8 @@ void setup() {
   }
 
   display.begin();
-  display.setRotation(2);   // 180도 회전
-  display.setContrast(13);  // 대비 설정
-  display.setTextColor(BLACK);
-  
+  display.setTextColor(ST77XX_WHITE);
+
   redrawLCD();
   lcdDirty = false;
 }

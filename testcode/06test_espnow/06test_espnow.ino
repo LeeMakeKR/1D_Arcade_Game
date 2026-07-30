@@ -2,11 +2,23 @@
 #include <esp_now.h>
 #include <esp_wifi.h>
 #include <Adafruit_GFX.h>
-#include <Adafruit_PCD8544.h>
+#include <Adafruit_ST7735.h>
+#include <SPI.h>
 
-#define LCD_DC   9
+// ST7735 TFT LCD 핀 (5110과 같은 자리. RS=DC, SDA=MOSI, CLK=SCLK)
+#define LCD_DC   9    // ST7735의 RS 핀
 #define LCD_CS   10
 #define LCD_RST  14
+#define LCD_SDA  11   // = MOSI (FSPI 하드웨어 기본 핀)
+#define LCD_CLK  12   // = SCLK (FSPI 하드웨어 기본 핀)
+
+#define LCD_W        160
+#define LCD_H        128
+#define LCD_ROTATION 3          // 0,2 = 세로(128x160) / 1,3 = 가로(160x128)
+#define LCD_SPI_HZ   24000000   // 40MHz는 화면 아래쪽이 깨진다(01test_ST7735 주석 참고)
+
+// 라이브러리에 회색 상수가 없어 직접 정의(RGB565 50% 회색). 구분선/비활성 글자용
+#define LCD_GREY     0x7BEF
 
 #define MODE_SWITCH_PIN     18  // 토글 스위치: High = 1P, Low = 2P
 #define DEBOUNCE_MS         30
@@ -22,7 +34,28 @@ const uint8_t NUM_INPUT_SWITCHES = sizeof(INPUT_SWITCH_PINS) / sizeof(INPUT_SWIT
 
 const uint8_t BROADCAST_MAC[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
-Adafruit_PCD8544 display(LCD_DC, LCD_CS, LCD_RST);
+// 하드웨어 SPI 생성자는 5110과 인자 순서가 다르다: (CS, DC, RST)
+Adafruit_ST7735 tft = Adafruit_ST7735(LCD_CS, LCD_DC, LCD_RST);
+
+// 5110은 라이브러리가 프레임버퍼를 들고 있어서 clearDisplay()로 지우고 display()로 한 번에
+// 내보내는 방식이었다. ST7735에는 프레임버퍼가 없어 화면에 직접 그리면 깜빡이므로, 같은 크기의
+// 캔버스에 그린 뒤 통째로 전송한다. 덕분에 그리는 코드는 5110 때와 똑같이 쓸 수 있다.
+class Lcd : public GFXcanvas16 {
+public:
+  Lcd() : GFXcanvas16(LCD_W, LCD_H) {}
+  void begin() {
+    SPI.begin(LCD_CLK, -1, LCD_SDA, LCD_CS);   // MISO는 LCD가 쓰지 않아 -1
+    tft.initR(INITR_BLACKTAB);
+    tft.setSPISpeed(LCD_SPI_HZ);
+    tft.setRotation(LCD_ROTATION);
+    tft.fillScreen(ST77XX_BLACK);
+  }
+  void clearDisplay() { fillScreen(ST77XX_BLACK); }
+  // 40KB(160x128x2) 전송이라 24MHz에서 약 14ms 걸린다. 매 loop마다 부르지 말 것.
+  void display() { tft.drawRGBBitmap(0, 0, getBuffer(), LCD_W, LCD_H); }
+};
+
+Lcd display;
 
 enum MsgType : uint8_t {
   MSG_HELLO     = 1,
@@ -169,13 +202,20 @@ void IRAM_ATTR handleSwitchInterrupt(void *arg) {
 // 부팅 직후: 역할 표시 화면
 void drawBootScreen() {
   display.clearDisplay();
+  display.setTextSize(2);
+  display.setTextColor(ST77XX_CYAN);
   display.setCursor(0, 0);
   display.print("1D ARCADE");
-  display.setCursor(0, 16);
-  display.setTextSize(2);
+
+  // 역할은 부팅 순간 가장 중요한 정보라 크게(크기 5 = 30x40px)
+  display.setTextSize(5);
+  display.setTextColor(isRole1P ? ST77XX_YELLOW : ST77XX_MAGENTA);
+  display.setCursor(56, 44);
   display.print(isRole1P ? "1P" : "2P");
-  display.setTextSize(1);
-  display.setCursor(0, 40);
+
+  display.setTextSize(2);
+  display.setTextColor(ST77XX_WHITE);
+  display.setCursor(0, 104);
   display.print("BOOTING...");
   display.display();
 }
@@ -183,20 +223,28 @@ void drawBootScreen() {
 // 페어링 탐색 중: 점 애니메이션으로 진행 중임을 표시
 void drawSearchingScreen() {
   display.clearDisplay();
+  display.setTextSize(2);
+  display.setTextColor(ST77XX_WHITE);
   display.setCursor(0, 0);
   display.print("ROLE: ");
   display.print(isRole1P ? "1P" : "2P");
+  display.drawFastHLine(0, 24, LCD_W, LCD_GREY);
 
-  display.setCursor(0, 16);
+  display.setCursor(0, 52);
   if (roleMismatchDetected && (millis() - roleMismatchAtMs < 1500)) {
-    display.print("ROLE MISMATCH");
+    display.setTextColor(ST77XX_RED);   // 두 보드가 같은 역할 - 한쪽 5번 토글을 바꿔야 한다
+    display.print("ROLE");
+    display.setCursor(0, 74);
+    display.print("MISMATCH");
   } else {
+    display.setTextColor(ST77XX_YELLOW);
     display.print("SEARCHING");
     uint8_t dots = (millis() / 400) % 4;
     for (uint8_t i = 0; i < dots; i++) display.print(".");
   }
 
-  display.setCursor(0, 32);
+  display.setTextColor(ST77XX_WHITE);
+  display.setCursor(0, 106);
   display.print("CH:"); display.print(ESPNOW_CHANNEL);
   display.print(" TX:"); display.print(txCount);
   display.display();
@@ -205,19 +253,24 @@ void drawSearchingScreen() {
 // 페어링 직후 잠깐 보여주는 완료 화면
 void drawPairedScreen() {
   display.clearDisplay();
+  display.setTextSize(2);
+  display.setTextColor(ST77XX_WHITE);
   display.setCursor(0, 0);
   display.print("ROLE: ");
   display.print(isRole1P ? "1P" : "2P");
+  display.drawFastHLine(0, 24, LCD_W, LCD_GREY);
 
-  display.setCursor(0, 16);
-  display.setTextSize(2);
+  display.setTextSize(3);
+  display.setTextColor(ST77XX_GREEN);
+  display.setCursor(6, 50);
   display.print("PAIRED!");
-  display.setTextSize(1);
 
   char macStr[18];
   snprintf(macStr, sizeof(macStr), "%02X%02X%02X%02X%02X%02X",
            peerMac[0], peerMac[1], peerMac[2], peerMac[3], peerMac[4], peerMac[5]);
-  display.setCursor(0, 40);
+  display.setTextSize(2);
+  display.setTextColor(ST77XX_CYAN);
+  display.setCursor(0, 106);   // 12자 x 12px = 144px로 화면 폭에 들어간다
   display.print(macStr);
   display.display();
 }
@@ -225,21 +278,29 @@ void drawPairedScreen() {
 // 페어링 이후 통신 테스트 상태 화면
 void drawStatusScreen() {
   display.clearDisplay();
+  display.setTextSize(2);
 
+  display.setTextColor(ST77XX_WHITE);
   display.setCursor(0, 0);
   display.print("ROLE: ");
   display.print(isRole1P ? "1P" : "2P");
+  display.setTextColor(ST77XX_GREEN);
   display.print(" OK");
+  display.drawFastHLine(0, 24, LCD_W, LCD_GREY);
 
-  display.setCursor(0, 16);
+  display.setTextColor(ST77XX_WHITE);
+  display.setCursor(0, 34);
   display.print("TX:"); display.print(txCount);
   display.print(" RX:"); display.print(rxCount);
 
-  display.setCursor(0, 24);
-  display.print("SCORE:"); display.print(score);
+  display.setCursor(0, 58);
+  display.print("SCORE:");
+  display.setTextColor(ST77XX_YELLOW);
+  display.print(score);
 
+  display.setTextColor(ST77XX_CYAN);
+  display.setCursor(0, 90);
   if (isRole1P) {
-    display.setCursor(0, 32);
     if (lastRemoteSwitchIdx != 255) {
       display.print("P2:SW");
       display.print(lastRemoteSwitchIdx + 1);
@@ -247,7 +308,6 @@ void drawStatusScreen() {
       display.print("P2:WAIT");
     }
   } else {
-    display.setCursor(0, 32);
     display.print("RTT:"); display.print(lastRttMs); display.print("ms");
   }
 
@@ -275,10 +335,8 @@ void setup() {
   }
 
   display.begin();
-  display.setRotation(2);
-  display.setContrast(20);
-  display.setTextSize(1);
-  display.setTextColor(BLACK);
+  display.setTextSize(2);
+  display.setTextColor(ST77XX_WHITE);
   drawBootScreen();
   delay(1000);  // 역할(1P/2P) 확인용 부팅 화면 잠시 유지
 
