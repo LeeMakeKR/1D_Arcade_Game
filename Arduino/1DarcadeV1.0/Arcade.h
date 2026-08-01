@@ -119,7 +119,12 @@ public:
 
 Lcd display;
 
-// 이 보드에 라인 LED가 물려 있는가. setup()에서 BOARD_ID_PIN(5번 토글)을 읽어 정한다.
+// 5번 토글을 지금 읽는다. HIGH = 라인 LED가 달린 보드(Duel Pong의 1P).
+// 부팅 때 한 번만 읽으면 메뉴에서 토글을 바꿔도 반영되지 않아 재부팅해야 하므로,
+// 값이 필요한 시점마다 이 함수로 읽는다.
+bool readBoardIsMain() { return digitalRead(BOARD_ID_PIN) == HIGH; }
+
+// 이 보드에 라인 LED가 물려 있는가. 게임에 들어갈 때 readBoardIsMain()으로 갱신한다.
 //
 // 이 값은 Duel Pong의 1P/2P 역할을 정하는 데에만 쓴다. 렌더링은 이 값을 보지 않고 늘
 // 스트립 전체를 그린다. 토글이 반대로 놓여 있다고 해서 라인 LED가 통째로 죽으면

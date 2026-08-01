@@ -8,7 +8,8 @@
   역할
     라인 LED가 물려 있는 보드가 1P(authoritative)다. 공 물리/판정/점수/사운드를 혼자
     결정하고 코트를 그린다. 반대 보드는 2P로, 자기 입력을 1P에 보내고 받은 상태를 그린다.
-    어느 쪽인지는 부팅 시 BOARD_ID_PIN(5번 토글)으로 정해지며 Arcade.h의 hasLineLeds가 들고 있다.
+    어느 쪽인지는 BOARD_ID_PIN(5번 토글)으로 정해진다. 토글은 begin()에서 매번 다시 읽으므로
+    메뉴에서 위치를 바꾸면 재부팅 없이 역할이 바뀐다(현재 상태는 메인 메뉴에 표시된다).
     양쪽 보드가 같은 역할로 켜져 있으면 LCD에 ROLE MISMATCH가 뜬다.
 
   통신
@@ -557,6 +558,9 @@ void drawLcd() {
 // ---------------------------------------------------------------------------
 void begin() {
   exitRequested = false;
+  // 토글은 게임에 들어오는 이 시점에 읽는다. 부팅 값을 그대로 쓰면 메뉴에서 토글을
+  // 바꿔도 역할이 그대로여서 재부팅해야만 바뀐다.
+  hasLineLeds = readBoardIsMain();
   isRole1P = hasLineLeds;   // 라인 LED가 달린 보드가 1P
   paired = false;
   roleMismatch = false;

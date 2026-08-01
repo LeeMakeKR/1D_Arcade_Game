@@ -37,8 +37,9 @@
   ---------------------------------------------------------------------------
   보드 두 대
   ---------------------------------------------------------------------------
-  같은 펌웨어를 두 보드에 올린다. 부팅 시 BOARD_ID_PIN(5번 토글)을 읽어
-  라인 LED가 달린 보드인지 판단하고, 그 값이 Duel Pong의 1P/2P 역할이 된다.
+  같은 펌웨어를 두 보드에 올린다. BOARD_ID_PIN(5번 토글)이 라인 LED가 달린 보드인지를
+  나타내고, 그 값이 Duel Pong의 1P/2P 역할이 된다. 토글은 Duel Pong에 들어갈 때마다
+  다시 읽으므로 재부팅 없이 역할을 바꿀 수 있다. 현재 상태는 메인 메뉴에 표시된다.
   렌더링은 이 값을 보지 않고 늘 스트립 전체를 그린다(Arcade.h의 hasLineLeds 주석 참고).
 
   ---------------------------------------------------------------------------
@@ -165,6 +166,16 @@ void drawMenuLcd() {
       display.setCursor(SETTING_VALUE_X, y);
       display.print(v);
     }
+  }
+
+  // 메인 화면에는 5번 토글 상태를 같이 보여준다. Duel Pong의 1P/2P가 여기서 갈리는데,
+  // 게임에 들어가기 전에는 확인할 방법이 없어서 토글이 죽어도 알아채지 못한다.
+  if (page == P_MAIN) {
+    display.setTextSize(1);
+    display.setTextColor(LCD_GREY);
+    display.setCursor(LCD_W - 58, 100);
+    display.print("BOARD: ");
+    display.print(readBoardIsMain() ? "1P" : "2P");
   }
 
   display.setTextColor(LCD_GREY);
@@ -308,6 +319,11 @@ void menuMove(int8_t delta) {
 void menuUpdate(uint32_t now) {
   uint8_t pressed = Input::takePressed();
 
+  // 토글을 움직이면 메인 화면 표시가 바로 따라가야 확인이 된다
+  static bool lastBoardMain = true;
+  bool boardMain = readBoardIsMain();
+  if (boardMain != lastBoardMain) { lastBoardMain = boardMain; menuDirty = true; }
+
   if (pressed & (1 << BTN_UP))     menuMove(+1);
   if (pressed & (1 << BTN_DOWN))   menuMove(-1);
   if (pressed & (1 << BTN_SELECT)) menuSelect();
@@ -323,7 +339,7 @@ void menuUpdate(uint32_t now) {
 // ---------------------------------------------------------------------------
 void setup() {
   pinMode(BOARD_ID_PIN, INPUT_PULLUP);
-  hasLineLeds = (digitalRead(BOARD_ID_PIN) == HIGH);
+  hasLineLeds = readBoardIsMain();   // Duel Pong 진입 시 다시 읽는다
 
   Input::begin();
 
