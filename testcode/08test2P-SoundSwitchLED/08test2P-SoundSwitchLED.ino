@@ -11,7 +11,7 @@
   부팅 시 5번 토글 스위치(GPIO18)를 읽어 역할이 정해진다(HIGH = 1P, LOW = 2P).
   두 보드는 반드시 서로 다른 역할이어야 하며, 같으면 LCD에 ROLE MISMATCH가 뜬다.
 
-    - 1P: 라인 LED 전체(스위치 LED를 제외한 176개)를 담당한다. 자기 스위치 입력이든
+    - 1P: 라인 LED 전체(스위치 LED를 제외한 172개)를 담당한다. 자기 스위치 입력이든
           2P에서 넘어온 입력이든, 그 스위치 색으로 라인 전체를 빛낸다.
           그리고 자기 입력이 생기면 2P에게 사운드 재생 신호를 보낸다.
     - 2P: 자기 스위치에 붙은 LED 1~4번과 자기 쪽 사운드 재생을 담당한다.
@@ -70,12 +70,12 @@
 #include "sounds/powerUp.h"
 
 #define LED_PIN         8    // WS2815 데이터 핀(readme.md 배선 기준, 프로토콜은 WS2812 호환)
-#define NUM_LEDS_TOTAL  180  // 스위치 내장 LED 4개 + 라인 LED 176개 (1P 기준)
+#define NUM_LEDS_TOTAL  176  // 스위치 내장 LED 4개 + 라인 LED 172개 (1P 기준)
 #define NUM_SWITCH_LEDS 4    // index 0~3: 스위치 1~4 내장 LED
 #define LINE_START      NUM_SWITCH_LEDS  // 라인 LED 첫 칸 = 4
 
-// 라인 LED 176개를 한꺼번에 켜기 때문에 밝기를 보수적으로 잡았다.
-// WS2815는 12V에서 픽셀당 약 36mA(RGB 전부 점등)까지 먹으므로, 176개를 풀 밝기로 켜면
+// 라인 LED 172개를 한꺼번에 켜기 때문에 밝기를 보수적으로 잡았다.
+// WS2815는 12V에서 픽셀당 약 36mA(RGB 전부 점등)까지 먹으므로, 172개를 풀 밝기로 켜면
 // 6A를 넘어 전원과 스트립 양쪽에 부담이 된다. 아래 두 값을 곱한 만큼만 흐르게 해서
 // (BRIGHTNESS/255 x LINE_LED_SCALE ≈ 12%) 1A 아래로 눌러 두었다.
 // 실제 전원 용량을 확인한 뒤 필요하면 올리되, 흰색(스위치 4번)이 가장 많이 먹는다는 점을 감안할 것.
@@ -87,7 +87,7 @@
 #define LINE_FLASH_MS      400  // 라인 LED를 켜 두는 시간(스위치보다 살짝 길게 여운을 준다)
 #define BOOT_STEP_MS       150  // 부팅 시 스위치 LED를 하나씩 확인하는 간격
 
-// ST7735 TFT LCD 핀 (5110과 같은 자리. RS=DC, SDA=MOSI, CLK=SCLK)
+// ST7735 TFT LCD 핀 (RS=DC, SDA=MOSI, CLK=SCLK)
 #define LCD_DC   9   // ST7735의 RS 핀 (Data/Command 선택)
 #define LCD_CS   10  // LCD SPI Chip Select (FSPI 하드웨어 기본 CS0)
 #define LCD_RST  14  // LCD 하드웨어 리셋 핀
@@ -114,7 +114,9 @@
 // TODO: 추후 설정 화면(LED 밝기/볼륨과 함께)에서 NVS에 저장된 값으로 대체.
 #define ESPNOW_CHANNEL      1
 
-const uint8_t SWITCH_PINS[] = {7, 15, 16, 17};
+// 인덱스 = 스위치 LED 위치(0~3). 그 자리의 스위치가 물려 있는 GPIO를 적는다.
+// 3번/4번 자리의 배선이 GPIO 번호 순서와 반대라 17과 16을 바꿔 넣었다.
+const uint8_t SWITCH_PINS[] = {7, 15, 17, 16};
 const uint8_t NUM_SWITCHES = sizeof(SWITCH_PINS) / sizeof(SWITCH_PINS[0]);
 
 const uint8_t BROADCAST_MAC[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
@@ -128,14 +130,15 @@ static const SoundClip* const SWITCH_SOUNDS[NUM_SWITCHES] = {
   &CLIP_powerUp        // 스위치 4 (흰색)
 };
 
-Adafruit_NeoPixel strip(NUM_LEDS_TOTAL, LED_PIN, NEO_GRB + NEO_KHZ800);
+// 색 순서는 RGB다. 데이터시트상 WS2815는 GRB지만 실제 스트립은 R과 G가 반대로 나온다
+// (Color(255,0,0)이 초록으로 점등). 스트립을 교체하면 여기부터 확인할 것.
+Adafruit_NeoPixel strip(NUM_LEDS_TOTAL, LED_PIN, NEO_RGB + NEO_KHZ800);
 
-// 하드웨어 SPI 생성자는 5110과 인자 순서가 다르다: (CS, DC, RST)
+// 하드웨어 SPI 생성자 인자 순서: (CS, DC, RST)
 Adafruit_ST7735 tft = Adafruit_ST7735(LCD_CS, LCD_DC, LCD_RST);
 
-// 5110은 라이브러리가 프레임버퍼를 들고 있어서 clearDisplay()로 지우고 display()로 한 번에
-// 내보내는 방식이었다. ST7735에는 프레임버퍼가 없어 화면에 직접 그리면 깜빡이므로, 같은 크기의
-// 캔버스에 그린 뒤 통째로 전송한다. 덕분에 그리는 코드는 5110 때와 똑같이 쓸 수 있다.
+// ST7735는 프레임버퍼를 들고 있지 않아서 화면에 직접 그리면 깜빡인다. 그래서 화면과 같은 크기의
+// 캔버스에 그린 뒤 통째로 전송한다. clearDisplay()로 지우고 display()로 한 번에 내보내면 된다.
 class Lcd : public GFXcanvas16 {
 public:
   Lcd() : GFXcanvas16(LCD_W, LCD_H) {}
@@ -505,8 +508,8 @@ void setup() {
     pinMode(SWITCH_PINS[i], INPUT_PULLUP);  // 눌리면 GND로 연결되는 배선이라 내부 풀업 사용
   }
 
-  // 라인 LED는 1P에만 물려 있다. 2P에서 180개를 다 내보내면 없는 픽셀에 데이터를 흘리며
-  // show() 시간만 길어지므로(약 5.4ms -> 0.12ms), 2P는 스위치 LED 4개로 줄인다.
+  // 라인 LED는 1P에만 물려 있다. 2P에서 176개를 다 내보내면 없는 픽셀에 데이터를 흘리며
+  // show() 시간만 길어지므로(약 5.3ms -> 0.12ms), 2P는 스위치 LED 4개로 줄인다.
   strip.updateLength(isRole1P ? NUM_LEDS_TOTAL : NUM_SWITCH_LEDS);
   strip.begin();
   strip.setBrightness(BRIGHTNESS);
@@ -591,7 +594,7 @@ void loop() {
   }
 
   // 스트립 전송은 이번 loop에서 바뀐 내용이 있을 때 한 번만 한다.
-  // (1P는 180픽셀 전송에 약 5.4ms가 걸려서, 매 loop마다 부르면 낭비가 크다)
+  // (1P는 176픽셀 전송에 약 5.3ms가 걸려서, 매 loop마다 부르면 낭비가 크다)
   if (stripDirty) {
     safeShow();
     stripDirty = false;

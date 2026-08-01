@@ -28,6 +28,10 @@ static bool soloLocked = false;  // audioTask 안에서만 읽고 쓰므로 동�
 static const SoundClip* const* clipTable = nullptr;  // 스케치가 넘겨준 클립 목록
 static uint8_t clipTableCount = 0;
 
+// 출력 볼륨. 설정 화면(loop 태스크)이 쓰고 audioTask가 읽으므로 volatile.
+// 한 워드 접근이라 찢어질 일이 없어 별도 잠금은 두지 않았다.
+static volatile uint16_t outGain = SOUND_GAIN_UNITY / 2;   // 기본 50%
+
 // 활성 슬롯 수를 다시 센다.
 // 이 값은 audioTask가 "믹싱을 계속 돌릴지 큐에서 잠들지"를 판단하는 기준이라,
 // 슬롯을 건드린 직후에는 반드시 갱신해야 한다.
@@ -92,9 +96,10 @@ static void mixTick() {
     if (n > MIX_FRAMES) n = MIX_FRAMES;
 
     const int8_t* src = v.pcm + v.pos;
-    // PCM을 8bit signed로 구워뒀기 때문에 부호 보정 없이 시프트만으로 16bit로 올라간다.
-    // 시프트 양이 곧 볼륨이다(SOUND_GAIN_SHIFT 주석 참고).
-    for (uint32_t j = 0; j < n; j++) mix[j] += (int32_t)src[j] << SOUND_GAIN_SHIFT;
+    // PCM이 8bit signed라 부호 보정 없이 그대로 곱하면 된다.
+    // gain이 SOUND_GAIN_UNITY(256)일 때가 src << 8, 즉 원음이다.
+    int32_t gain = (int32_t)outGain;
+    for (uint32_t j = 0; j < n; j++) mix[j] += (int32_t)src[j] * gain;
 
     v.pos += n;
     if (v.pos >= v.len) {
@@ -173,4 +178,13 @@ void soundPlay(uint8_t idx) {
 
 uint8_t soundActiveVoices() {
   return activeVoices;
+}
+
+void soundSetGain(uint16_t gain) {
+  if (gain > SOUND_GAIN_UNITY) gain = SOUND_GAIN_UNITY;
+  outGain = gain;
+}
+
+uint16_t soundGetGain() {
+  return outGain;
 }

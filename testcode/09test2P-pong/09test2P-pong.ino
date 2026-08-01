@@ -24,12 +24,32 @@
     헛스윙인지는 1P만 알기 때문이다. 눌렀다고 2P가 먼저 소리를 내면 헛스윙에도 반사음이 난다.
 
   ---------------------------------------------------------------------------
+  소리
+  ---------------------------------------------------------------------------
+  소리는 양쪽에서 늘 같이 나지 않는다. 자기가 한 행동의 결과만 자기 쪽에서 들리게 해서
+  두 사람이 각자 자기 플레이에 대한 피드백을 받는다.
+
+    상황                     소리            누가 듣나
+    ----------------------   -------------   ------------
+    READY에서 스위치 누름    pickupCoin02    누른 쪽만
+    양쪽 다 준비됨           powerUp         양쪽
+    카운트다운 3 / 2 / 1     blip01          양쪽
+    START                    blip02          양쪽
+    서브 출발                pickupCoin02    양쪽
+    초록 영역에서 반사       pickupCoin01    받아친 쪽만
+    노랑 영역에서 반사       pickupCoin02    받아친 쪽만
+    빨강 영역에서 반사       blip01          받아친 쪽만
+    공을 놓침                explosion02     놓친 쪽만
+      〃 그 상대             pickupCoin02    상대만
+    매치 승리                fanfare         이긴 쪽만
+
+  ---------------------------------------------------------------------------
   게임 규칙
   ---------------------------------------------------------------------------
   [코트]
-    1P 보드에 물린 스트립 180개 중 라인 LED 176개(스트립 5번 = 인덱스 4 ~ 스트립 180번 = 인덱스 179)가
+    1P 보드에 물린 스트립 176개 중 라인 LED 172개(스트립 5번 = 인덱스 4 ~ 스트립 176번 = 인덱스 175)가
     코트다. 인덱스가 작은 쪽이 1P, 큰 쪽이 2P.
-    각 플레이어 쪽 끝에서부터 빨강 1개 / 노랑 3개 / 초록 6개, 총 10칸이 그 사람의 타격 영역이다.
+    각 플레이어 쪽 끝에서부터 빨강 3개 / 노랑 6개 / 초록 9개, 총 18칸이 그 사람의 타격 영역이다.
 
   [반사]
     공이 자기 영역 안에 있을 때 1~4번 아무 스위치나 누르면 반대편으로 반사된다.
@@ -45,17 +65,19 @@
 
   [서브]
     서브는 항상 중앙에서 느린 속도로 출발한다.
-      - 서브를 놓치면(1번째)  : 그 사람 영역이 주황색으로 점등, 점수 변화 없이 같은 쪽으로 재서브.
-      - 두 번째도 놓치면      : 그 사람 영역이 빨간색으로 점등, 실점. 다음 서브는 반대편으로.
+      - 서브를 놓치면(1번째)  : 점수 변화 없이 같은 쪽으로 재서브.
+      - 두 번째도 놓치면      : 실점. 다음 서브는 반대편으로.
       - 서브를 한 번이라도 받아내면 랠리가 되고, 서브 실패 카운트는 초기화된다.
 
-  [랠리 실점]
-    반사에 실패하면 코트(5~마지막 LED)를 반으로 갈라 가까운 쪽을 각자의 영역으로 보고,
-    이긴 쪽 절반은 초록, 진 쪽 절반은 빨강으로 1초간 점등한 뒤 점수를 갱신한다.
-    다음 서브는 점수를 잃은 쪽으로 출발한다.
+  [코트 점등 - 폴트/실점/매치 종료 공통]
+    공을 놓친 상황은 원인과 상관없이 늘 같은 방식으로 보여준다. 코트(5~마지막 LED) 전체를
+    반으로 갈라 놓친 쪽 절반은 빨강, 반대 절반은 초록으로 1초간 점등한다.
+    지금이 폴트인지 실점인지 승리인지는 LCD 문구(FAULT / POINT / WIN)로 구분한다.
+    랠리에서 졌으면 다음 서브는 점수를 잃은 쪽으로, 더블 폴트면 반대편으로 출발한다.
 
   [매치]
     MATCH_POINT점을 먼저 내면 승리(팡파레 + 승자 쪽 절반 초록). 아무 스위치나 누르면 처음으로.
+    승리 화면을 MATCH_RAINBOW_MS만큼 보여준 뒤에는 코트 전체가 흐르는 무지개로 바뀐다.
 
   ---------------------------------------------------------------------------
   튜닝 포인트
@@ -82,14 +104,14 @@
 #include <SPI.h>
 
 #include "SoundEngine.h"
+#include "Logo1DArcade.h"
 
 // 사운드 헤더는 PCM 배열 정의를 담고 있어서 이 .ino 한 곳에서만 include한다(SoundEngine.h 주석 참고).
 #include "sounds/blip01.h"
 #include "sounds/blip02.h"
-#include "sounds/laser.h"
 #include "sounds/pickupCoin01.h"
 #include "sounds/pickupCoin02.h"
-#include "sounds/explosion01.h"
+#include "sounds/explosion02.h"
 #include "sounds/powerUp.h"
 #include "sounds/fanfare.h"
 
@@ -99,18 +121,18 @@
 #define LED_PIN         8    // WS2815 데이터 핀(프로토콜은 WS2812 호환). 양쪽 보드 모두 같은 핀
 
 // 두 보드의 스트립은 길이가 다르다. 서로 이어져 있지 않고 각자 자기 GPIO8에 물린 별개의 체인이다.
-//   1P 보드: 스위치 내장 LED 4개 + 라인 LED 176개 = 180개  ← 코트가 여기에 있다
-//   2P 보드: 자기 스위치 내장 LED 4개뿐            = 4개   ← 위 180개에 포함되지 않는 별도 체인
-#define NUM_LEDS_1P     180  // 1P 보드 스트립 전체
+//   1P 보드: 스위치 내장 LED 4개 + 라인 LED 172개 = 176개  ← 코트가 여기에 있다
+//   2P 보드: 자기 스위치 내장 LED 4개뿐            = 4개   ← 위 176개에 포함되지 않는 별도 체인
+#define NUM_LEDS_1P     176  // 1P 보드 스트립 전체
 #define NUM_LEDS_2P     4    // 2P 보드 스트립 전체(스위치 LED만)
 #define NUM_SWITCH_LEDS 4    // 양쪽 공통: index 0~3 = 자기 보드 스위치 1~4 내장 LED
 
 #define FIELD_START     NUM_SWITCH_LEDS    // 코트 첫 칸(1P 쪽 끝) = 인덱스 4  → 스트립 5번째 LED
-#define FIELD_END       (NUM_LEDS_1P - 1)  // 코트 마지막 칸(2P 쪽 끝) = 인덱스 179 → 스트립 180번째 LED
-#define FIELD_LEN       (FIELD_END - FIELD_START + 1)   // 176
+#define FIELD_END       (NUM_LEDS_1P - 1)  // 코트 마지막 칸(2P 쪽 끝) = 인덱스 175 → 스트립 176번째 LED
+#define FIELD_LEN       (FIELD_END - FIELD_START + 1)   // 172
 // 라인 LED를 늘리거나 줄이면 NUM_LEDS_1P만 고치면 코트/존/반코트 계산이 전부 따라간다.
 
-// ST7735 TFT LCD 핀 (5110과 같은 자리. RS=DC, SDA=MOSI, CLK=SCLK)
+// ST7735 TFT LCD 핀 (RS=DC, SDA=MOSI, CLK=SCLK)
 #define LCD_DC   9   // ST7735의 RS 핀 (Data/Command 선택)
 #define LCD_CS   10  // LCD SPI Chip Select (FSPI 하드웨어 기본 CS0)
 #define LCD_RST  14  // LCD 하드웨어 리셋 핀
@@ -131,14 +153,18 @@
 
 #define MODE_SWITCH_PIN  18   // 5번 토글 스위치: HIGH = 1P, LOW = 2P
 
-const uint8_t SWITCH_PINS[] = {7, 15, 16, 17};
+// 인덱스 = 스위치 LED 위치(0~3). 그 자리의 스위치가 물려 있는 GPIO를 적는다.
+// 3번/4번 자리의 배선이 GPIO 번호 순서와 반대라 17과 16을 바꿔 넣었다.
+// Pong은 네 스위치가 전부 같은 동작이라 게임 판정에는 영향이 없고, 누른 스위치의 LED가
+// 제자리에서 반짝이도록 하는 데 필요하다.
+const uint8_t SWITCH_PINS[] = {7, 15, 17, 16};
 const uint8_t NUM_SWITCHES = sizeof(SWITCH_PINS) / sizeof(SWITCH_PINS[0]);
 
 // 라인 LED를 한꺼번에 켜는 연출이 있어서 밝기를 보수적으로 잡았다(08번 스케치와 동일한 근거).
-// WS2815는 12V에서 픽셀당 약 36mA까지 먹으므로 176개를 풀 밝기로 켜면 6A를 넘는다.
+// WS2815는 12V에서 픽셀당 약 36mA까지 먹으므로 172개를 풀 밝기로 켜면 6A를 넘는다.
 #define BRIGHTNESS     120    // 스트립 전체 밝기
 #define FULL_SCALE     0.25f  // 코트 전체를 채우는 연출(카운트다운/득점 표시)에 쓰는 감쇠
-#define ZONE_SCALE     0.45f  // 존/공처럼 몇 칸만 켜질 때의 감쇠(20칸 정도라 조금 더 밝게)
+#define ZONE_SCALE     0.45f  // 존/공처럼 몇 칸만 켜질 때의 감쇠(양쪽 36칸 정도라 조금 더 밝게)
 #define SWITCH_IDLE    0.10f  // 대기 중 스위치 LED를 은은하게 켜 두는 밝기(Pong 스위치는 흰색)
 
 // ---------------------------------------------------------------------------
@@ -153,67 +179,78 @@ const uint8_t NUM_SWITCHES = sizeof(SWITCH_PINS) / sizeof(SWITCH_PINS[0]);
 // ---------------------------------------------------------------------------
 // 게임 상수 (여기만 만져도 난이도가 다 바뀐다)
 // ---------------------------------------------------------------------------
-#define ZONE_RED_LEN      1   // 플레이어 쪽 끝에서부터 빨강 1칸
-#define ZONE_YELLOW_LEN   3   // 그다음 노랑 3칸
-#define ZONE_GREEN_LEN    6   // 그다음 초록 6칸
-#define ZONE_LEN          (ZONE_RED_LEN + ZONE_YELLOW_LEN + ZONE_GREEN_LEN)  // 타격 영역 = 10칸
+#define ZONE_RED_LEN      3   // 플레이어 쪽 끝에서부터 빨강 3칸
+#define ZONE_YELLOW_LEN   6   // 그다음 노랑 6칸
+#define ZONE_GREEN_LEN    9   // 그다음 초록 9칸
+#define ZONE_LEN          (ZONE_RED_LEN + ZONE_YELLOW_LEN + ZONE_GREEN_LEN)  // 타격 영역 = 18칸
 
-#define BALL_SPEED_SERVE   60.0f   // 서브 속도(LED칸/초). 코트 176칸을 약 3초에 건너간다
+#define BALL_SPEED_SERVE   60.0f   // 서브 속도(LED칸/초). 코트 172칸을 약 3초에 건너간다
 #define REFLECT_GAIN_GREEN  1.00f  // 초록 반사: 온 속도 그대로
 #define REFLECT_GAIN_YELLOW 1.18f  // 노랑 반사: 약간 빠르게
 #define REFLECT_GAIN_RED    1.10f  // 빨강 반사: 온 속도에서 10% 가속
 #define REFLECT_MIN_RED     85.0f  // 빨강 반사의 최저 속도(노랑 반사보다 약간 빠른 값)
-#define BALL_SPEED_MAX     220.0f  // 상한. 이보다 빠르면 10칸 영역을 45ms만에 지나가 사람이 못 친다
+#define BALL_SPEED_MAX     220.0f  // 상한. 이보다 빠르면 18칸 영역을 82ms만에 지나가 사람이 못 친다
 
-#define MATCH_POINT        7   // 먼저 이 점수에 도달하면 승리
+#define MATCH_POINT       10   // 먼저 이 점수에 도달하면 승리
 
-#define OK_MS              700   // "OK" 표시 시간
+#define OK_MS             2000   // "OK" 표시 시간
 #define COUNTDOWN_STEPS      5   // 초록/꺼짐/초록/꺼짐/빨강
-#define COUNTDOWN_STEP_MS  1000  // 한 스텝 1초
+#define COUNTDOWN_STEP_MS   500  // 한 스텝 0.5초
 #define START_MS           800   // "START" 표시 후 서브까지의 간격
 #define FLASH_MS          1000   // 실점/폴트 연출 점등 시간(1초)
 #define MATCH_END_LOCK_MS 2000   // 승리 화면에서 입력을 무시하는 시간(오조작 방지)
+#define MATCH_RAINBOW_MS  5000   // 승리 화면에서 이 시간이 지나면 코트가 무지개로 바뀐다
+#define RAINBOW_PERIOD_MS 3000   // 무지개가 코트를 한 바퀴 흐르는 데 걸리는 시간
 
 #define DEBOUNCE_MS        30   // 스위치 채터링 무시 시간
 #define SWITCH_FLASH_MS   120   // 누른 스위치 LED를 밝게 켜 두는 시간
-#define FRAME_MS           16   // 코트 렌더 주기(약 60FPS). 180픽셀 show()가 약 5.4ms
+#define FRAME_MS           16   // 코트 렌더 주기(약 60FPS). 176픽셀 show()가 약 5.3ms
 
 // ---------------------------------------------------------------------------
 // 사운드
 // ---------------------------------------------------------------------------
 // soundPlay()의 인자가 곧 이 배열의 인덱스이고, 그 인덱스를 그대로 2P에도 실어 보낸다.
+// 이름은 "어떤 소리인가"가 아니라 "언제 나는가"로 붙였다. 같은 클립을 두 상황이 나눠 써도
+// 호출부를 읽을 때 상황이 그대로 드러나고, 나중에 한쪽만 다른 소리로 바꾸기도 쉽다.
 enum SfxId : uint8_t {
-  SFX_BOUNCE = 0,   // 초록 반사
-  SFX_BOUNCE_FAST,  // 노랑/빨강 반사
-  SFX_SERVE,        // 서브 발사
-  SFX_FAULT,        // 첫 서브 놓침(주황)
-  SFX_POINT,        // 실점
-  SFX_TICK,         // 카운트다운 한 칸
-  SFX_START,        // START
-  SFX_WIN,          // 매치 승리
+  SFX_READY_PRESS = 0,  // READY에서 스위치를 누름 - 누른 쪽만
+  SFX_READY_BOTH,       // 양쪽 다 준비됨          - 양쪽
+  SFX_COUNTDOWN,        // 카운트다운 한 칸(3/2/1) - 양쪽
+  SFX_START,            // START                   - 양쪽
+  SFX_SERVE,            // 서브 출발               - 양쪽
+  SFX_HIT_GREEN,        // 초록 영역에서 반사      - 받아친 쪽만
+  SFX_HIT_YELLOW,       // 노랑 영역에서 반사      - 받아친 쪽만
+  SFX_HIT_RED,          // 빨강 영역에서 반사      - 받아친 쪽만
+  SFX_MISS,             // 공을 놓침               - 놓친 쪽만
+  SFX_MISS_OPPONENT,    // 상대가 놓침             - 그 상대만
+  SFX_WIN,              // 매치 승리               - 이긴 쪽만
   NUM_SFX
 };
 
 static const SoundClip* const GAME_SOUNDS[NUM_SFX] = {
-  &CLIP_blip01,        // SFX_BOUNCE
-  &CLIP_laser,         // SFX_BOUNCE_FAST
-  &CLIP_pickupCoin01,  // SFX_SERVE
-  &CLIP_pickupCoin02,  // SFX_FAULT
-  &CLIP_explosion01,   // SFX_POINT
-  &CLIP_blip02,        // SFX_TICK
-  &CLIP_powerUp,       // SFX_START
+  &CLIP_pickupCoin02,  // SFX_READY_PRESS
+  &CLIP_powerUp,       // SFX_READY_BOTH
+  &CLIP_blip01,        // SFX_COUNTDOWN
+  &CLIP_blip02,        // SFX_START
+  &CLIP_pickupCoin02,  // SFX_SERVE
+  &CLIP_pickupCoin01,  // SFX_HIT_GREEN
+  &CLIP_pickupCoin02,  // SFX_HIT_YELLOW
+  &CLIP_blip01,        // SFX_HIT_RED
+  &CLIP_explosion02,   // SFX_MISS
+  &CLIP_pickupCoin02,  // SFX_MISS_OPPONENT
   &CLIP_fanfare        // SFX_WIN
 };
 
-// 길이는 setup()에서 역할에 따라 updateLength()로 정한다(1P = 180, 2P = 4).
-Adafruit_NeoPixel strip(NUM_LEDS_1P, LED_PIN, NEO_GRB + NEO_KHZ800);
+// 길이는 setup()에서 역할에 따라 updateLength()로 정한다(1P = 176, 2P = 4).
+// 색 순서는 RGB다. 데이터시트상 WS2815는 GRB지만 실제 스트립은 R과 G가 반대로 나온다
+// (Color(255,0,0)이 초록으로 점등). 스트립을 교체하면 여기부터 확인할 것.
+Adafruit_NeoPixel strip(NUM_LEDS_1P, LED_PIN, NEO_RGB + NEO_KHZ800);
 
-// 하드웨어 SPI 생성자는 5110과 인자 순서가 다르다: (CS, DC, RST)
+// 하드웨어 SPI 생성자 인자 순서: (CS, DC, RST)
 Adafruit_ST7735 tft = Adafruit_ST7735(LCD_CS, LCD_DC, LCD_RST);
 
-// 5110은 라이브러리가 프레임버퍼를 들고 있어서 clearDisplay()로 지우고 display()로 한 번에
-// 내보내는 방식이었다. ST7735에는 프레임버퍼가 없어 화면에 직접 그리면 깜빡이므로, 같은 크기의
-// 캔버스에 그린 뒤 통째로 전송한다. 덕분에 그리는 코드는 5110 때와 똑같이 쓸 수 있다.
+// ST7735는 프레임버퍼를 들고 있지 않아서 화면에 직접 그리면 깜빡인다. 그래서 화면과 같은 크기의
+// 캔버스에 그린 뒤 통째로 전송한다. clearDisplay()로 지우고 display()로 한 번에 내보내면 된다.
 class Lcd : public GFXcanvas16 {
 public:
   Lcd() : GFXcanvas16(LCD_W, LCD_H) {}
@@ -303,7 +340,6 @@ bool serving = false;             // 이 공이 아직 서브인가(한 번도 �
 uint8_t serveTarget = 0;          // 서브를 받는 사람 (0 = 1P, 1 = 2P)
 uint8_t serveFaults = 0;          // 같은 사람이 연속으로 서브를 놓친 횟수
 uint8_t flashPlayer = 0;          // FAULT/POINT 연출의 대상 플레이어 (0/1)
-bool pointByFault = false;        // 이번 실점이 더블 폴트로 난 것인가
 uint8_t countdownStep = 0;
 
 // LCD는 양쪽이 똑같이 보여야 한다. 1P는 게임 상태에서 채우고, 2P는 받은 패킷으로 채운다.
@@ -314,6 +350,10 @@ struct UiState {
   uint8_t info;
 };
 UiState ui = {PHASE_READY, 0, 0, 0};
+
+// ui.phase가 바뀐 시각. 매치 종료 후 무지개로 넘어가는 시점을 두 보드가 같이 계산하는 데 쓴다.
+// (2P는 phaseStartMs 같은 게임 내부 상태가 없고 MSG_STATE만 받으므로 이 값으로 맞춘다)
+uint32_t uiPhaseSinceMs = 0;
 
 // LCD는 한 장을 통째로 밀어넣는 데 약 14ms가 걸려서, 매 주기마다 그리면 코트 렌더링이 밀린다.
 // 그래서 내용이 실제로 바뀐 순간에만 이 플래그를 세워 그때만 다시 그린다.
@@ -339,7 +379,6 @@ uint32_t scaleColor(uint32_t c, float f) {
 uint32_t colRed()    { return strip.Color(255, 0, 0); }
 uint32_t colYellow() { return strip.Color(255, 170, 0); }
 uint32_t colGreen()  { return strip.Color(0, 255, 0); }
-uint32_t colOrange() { return strip.Color(255, 80, 0); }
 uint32_t colWhite()  { return strip.Color(255, 255, 255); }
 
 void safeShow() {
@@ -372,6 +411,8 @@ uint32_t zoneColor(int8_t zone) {
 }
 
 // 코트를 반으로 갈랐을 때 이 인덱스가 누구 쪽인가. 0 = 1P 절반, 1 = 2P 절반.
+// 한때 이 반환값을 뒤집어 둔 적이 있는데, 실점 연출의 초록/빨강이 반대로 보이던 원인은
+// 스트립 색 순서(NEO_RGB)였다. 그쪽을 고치면서 파일 상단의 좌표 규약대로 되돌렸다.
 uint8_t halfOwner(int16_t idx) {
   return (idx < FIELD_START + FIELD_LEN / 2) ? 0 : 1;
 }
@@ -467,6 +508,7 @@ void OnDataRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
         // 같은 내용이 주기적으로 반복 송신되므로, 실제로 달라졌을 때만 다시 그린다
         if (ui.phase != pkt.phase || ui.score1 != pkt.score1 ||
             ui.score2 != pkt.score2 || ui.info != pkt.info) {
+          if (ui.phase != pkt.phase) uiPhaseSinceMs = millis();
           ui.phase = pkt.phase;
           ui.score1 = pkt.score1;
           ui.score2 = pkt.score2;
@@ -488,10 +530,13 @@ void OnDataRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
 // ---------------------------------------------------------------------------
 // 사운드 (1P가 판정하고 양쪽에서 동시에 낸다)
 // ---------------------------------------------------------------------------
-void playSfx(uint8_t id) {
-  soundPlay(id);
-  if (isRole1P && paired) {
-    packet_t pkt = {};
+// 소리는 상황에 따라 한쪽 보드에서만 나기도 한다(반사음은 받아친 사람만 듣는 식).
+// 아래 두 함수는 1P의 게임 로직에서만 불린다. player 0 = 1P 보드, 1 = 2P 보드.
+void playSfxOn(uint8_t player, uint8_t id) {
+  if (player == 0) {
+    soundPlay(id);            // 1P 보드는 자기 스피커로 바로 재생
+  } else if (paired) {
+    packet_t pkt = {};        // 2P 보드는 "이 소리를 내라"를 받아서 재생
     pkt.type = MSG_SFX;
     pkt.role = 1;
     pkt.arg = id;
@@ -499,10 +544,16 @@ void playSfx(uint8_t id) {
   }
 }
 
+void playSfxBoth(uint8_t id) {
+  playSfxOn(0, id);
+  playSfxOn(1, id);
+}
+
 // ---------------------------------------------------------------------------
 // 게임 진행 (1P 전용)
 // ---------------------------------------------------------------------------
 void publishUi(uint8_t p, uint8_t info) {
+  if (ui.phase != p) uiPhaseSinceMs = millis();
   ui.phase = p;
   ui.score1 = score[0];
   ui.score2 = score[1];
@@ -535,7 +586,7 @@ void launchServe() {
   ballDir = (serveTarget == 0) ? -1 : +1;
   serving = true;
   lastPhysicsUs = micros();
-  playSfx(SFX_SERVE);
+  playSfxBoth(SFX_SERVE);
   enterPhase(PHASE_PLAY, 1);
 }
 
@@ -544,14 +595,12 @@ void concedePoint(uint8_t loser, bool byFault) {
   uint8_t winner = 1 - loser;
   score[winner]++;
   flashPlayer = loser;
-  pointByFault = byFault;
   serveFaults = 0;
   serving = false;
 
-  playSfx(SFX_POINT);
-
+  // 실점 자체의 소리는 handleMiss()에서 이미 양쪽에 각각 다르게 내보냈다.
   if (score[winner] >= MATCH_POINT) {
-    playSfx(SFX_WIN);
+    playSfxOn(winner, SFX_WIN);   // 팡파레는 이긴 쪽에서만
     enterPhase(PHASE_MATCH_END, winner + 1);
     return;
   }
@@ -563,12 +612,16 @@ void concedePoint(uint8_t loser, bool byFault) {
 
 // player가 공을 놓쳤다(자기 쪽 끝을 지나쳤다).
 void handleMiss(uint8_t player) {
+  // 폴트든 실점이든 "놓쳤다"는 사실은 같으므로 소리도 여기서 한 번만 낸다.
+  // 놓친 사람과 그 상대가 서로 다른 소리를 듣는다.
+  playSfxOn(player, SFX_MISS);
+  playSfxOn(1 - player, SFX_MISS_OPPONENT);
+
   if (serving) {
     serveFaults++;
     if (serveFaults < 2) {
       // 첫 서브 실패: 점수 변화 없이 같은 사람에게 다시 서브
       flashPlayer = player;
-      playSfx(SFX_FAULT);
       enterPhase(PHASE_FAULT, player + 1);
       return;
     }
@@ -599,9 +652,10 @@ void handleGamePress(uint8_t player) {
     case PHASE_READY:
       readyMask |= (uint8_t)(1 << player);
       if (readyMask == 0x03) {
-        playSfx(SFX_TICK);
+        playSfxBoth(SFX_READY_BOTH);          // 둘 다 준비됨 - 준비 완료음이 누름음을 대신한다
         enterPhase(PHASE_OK, 0);
       } else {
+        playSfxOn(player, SFX_READY_PRESS);   // 아직 한 명 - 누른 쪽에서만
         publishUi(PHASE_READY, readyMask);
       }
       return;
@@ -632,7 +686,10 @@ void handleGamePress(uint8_t player) {
     serveFaults = 0;
     publishUi(PHASE_PLAY, 0);
   }
-  playSfx(zone == 2 ? SFX_BOUNCE : SFX_BOUNCE_FAST);
+  // 반사음은 받아친 쪽에서만 난다. 어느 존으로 쳤는지가 소리로 구분된다.
+  playSfxOn(player, (zone == 2) ? SFX_HIT_GREEN
+                  : (zone == 1) ? SFX_HIT_YELLOW
+                                : SFX_HIT_RED);
 }
 
 void updateGame(uint32_t now) {
@@ -640,7 +697,7 @@ void updateGame(uint32_t now) {
     case PHASE_OK:
       if (now - phaseStartMs >= OK_MS) {
         countdownStep = 0;
-        playSfx(SFX_TICK);
+        playSfxBoth(SFX_COUNTDOWN);   // 첫 칸(3)의 소리. 이후 칸은 아래 COUNTDOWN에서
         enterPhase(PHASE_COUNTDOWN, 3);
       }
       break;
@@ -648,7 +705,7 @@ void updateGame(uint32_t now) {
     case PHASE_COUNTDOWN: {
       uint8_t step = (uint8_t)((now - phaseStartMs) / COUNTDOWN_STEP_MS);
       if (step >= COUNTDOWN_STEPS) {
-        playSfx(SFX_START);
+        playSfxBoth(SFX_START);
         // 첫 서브 방향은 랜덤
         serveTarget = (uint8_t)random(2);
         serveFaults = 0;
@@ -658,8 +715,8 @@ void updateGame(uint32_t now) {
       if (step != countdownStep) {
         countdownStep = step;
         stripDirty = true;                       // 코트 색이 바뀌는 스텝
-        uint8_t digit = 3 - (step / 2);          // 0,1 → 3 / 2,3 → 2 / 4 → 1
-        if (step % 2 == 0) playSfx(SFX_TICK);    // 불이 켜지는 스텝에서만 소리
+        uint8_t digit = 3 - (step / 2);              // 0,1 → 3 / 2,3 → 2 / 4 → 1
+        if (step % 2 == 0) playSfxBoth(SFX_COUNTDOWN);  // 불이 켜지는 스텝에서만 소리
         publishUi(PHASE_COUNTDOWN, digit);
       }
       break;
@@ -748,12 +805,20 @@ void drawHalves(uint8_t winner) {
   }
 }
 
-// 한 플레이어의 타격 영역만 한 색으로 채운다(서브 폴트/더블 폴트 연출).
-void fillZone(uint8_t player, uint32_t color) {
-  uint32_t c = scaleColor(color, ZONE_SCALE);
-  for (int16_t d = 0; d < ZONE_LEN; d++) {
-    int16_t idx = (player == 0) ? (FIELD_START + d) : (FIELD_END - d);
-    strip.setPixelColor(idx, c);
+// 매치 종료 후 무지개로 넘어갈 시점인가. 이 구간에는 스위치 LED도 무지개에 포함된다.
+// ui 기준이라 1P/2P 양쪽에서 같은 판정이 나온다.
+bool rainbowActive() {
+  return (ui.phase == PHASE_MATCH_END) && (millis() - uiPhaseSinceMs >= MATCH_RAINBOW_MS);
+}
+
+// 스트립 전체(스위치 LED 포함)를 흐르는 무지개로 채운다.
+// 색상환을 코트 길이에 펼쳐 놓고, 시간에 따라 시작 색을 돌려서 흐르는 것처럼 보이게 한다.
+// 2P 보드는 스트립이 스위치 LED 4개뿐이라, 그 4개가 색상환을 함께 도는 모습이 된다.
+void drawRainbow(uint32_t now) {
+  uint16_t base = (uint16_t)(((now % RAINBOW_PERIOD_MS) * 65536UL) / RAINBOW_PERIOD_MS);
+  for (uint16_t i = 0; i < strip.numPixels(); i++) {
+    uint16_t hue = base + (uint16_t)((uint32_t)i * 65536UL / NUM_LEDS_1P);
+    strip.setPixelColor(i, scaleColor(strip.gamma32(strip.ColorHSV(hue)), FULL_SCALE));
   }
 }
 
@@ -780,23 +845,20 @@ void renderField() {
       drawBall();
       break;
 
+    // 폴트든 실점이든 매치 종료든, 놓친 쪽 절반은 빨강 / 반대 절반은 초록으로 똑같이 점등한다.
+    // 어떤 상황인지는 LCD 문구(FAULT / POINT / WIN)로 구분한다.
     case PHASE_FAULT:
-      drawZones();
-      fillZone(flashPlayer, colOrange());   // 첫 서브를 놓친 쪽 영역을 주황으로
-      break;
-
     case PHASE_POINT:
-      if (pointByFault) {
-        drawZones();
-        fillZone(flashPlayer, colRed());    // 더블 폴트: 그 영역만 빨강
-      } else {
-        drawHalves(1 - flashPlayer);        // 랠리 실점: 코트를 반으로 갈라 초록/빨강
-      }
+      drawHalves(1 - flashPlayer);
       break;
 
     case PHASE_MATCH_END: {
-      uint8_t winner = (ui.info == 1) ? 0 : 1;
-      drawHalves(winner);
+      // 승패 표시를 충분히 보여준 뒤 무지개 연출로 넘어간다.
+      if (rainbowActive()) {
+        drawRainbow(millis());
+      } else {
+        drawHalves((ui.info == 1) ? 0 : 1);
+      }
       break;
     }
   }
@@ -911,42 +973,36 @@ void drawUi() {
       display.print((ui.info & 0x10) ? " +1 DF" : " POINT!");
       break;
 
-    case PHASE_MATCH_END:
+    case PHASE_MATCH_END: {
       display.setTextColor(ST77XX_WHITE);
       display.setCursor(0, 0);
       display.print(ui.score1);
       display.print(" - ");
       display.print(ui.score2);
 
-      display.setTextColor(ui.info == 1 ? ST77XX_YELLOW : ST77XX_MAGENTA);
-      printCentered(ui.info == 1 ? "1P WIN" : "2P WIN", 4, 40);
+      // 이 화면만은 두 보드가 서로 다른 글자를 띄운다. 보는 사람 기준으로 이겼는지를 말해야 하므로
+      // 승자(ui.info: 1 = 1P, 2 = 2P)를 이 보드의 역할과 비교한다.
+      bool iWon = ((ui.info == 1) == isRole1P);
+      display.setTextColor(iWon ? ST77XX_GREEN : ST77XX_RED);
+      printCentered("YOU", 4, 34);
+      printCentered(iWon ? "WIN" : "LOSE", 4, 68);
 
       display.setTextSize(2);
       display.setTextColor(LCD_GREY);
       display.setCursor(0, 104);
       display.print("PRESS TO RETRY");
       break;
+    }
   }
   display.display();
 }
 
 void drawBootScreen() {
   display.clearDisplay();
-  display.setTextSize(2);
-  display.setTextColor(ST77XX_CYAN);
-  display.setCursor(0, 0);
-  display.print("1D PONG 2P");
-
-  // 역할은 부팅 순간 가장 중요한 정보라 크게(크기 5 = 30x40px)
-  display.setTextSize(5);
-  display.setTextColor(isRole1P ? ST77XX_YELLOW : ST77XX_MAGENTA);
-  display.setCursor(56, 44);
-  display.print(isRole1P ? "1P" : "2P");
-
-  display.setTextSize(2);
-  display.setTextColor(ST77XX_WHITE);
-  display.setCursor(0, 104);
-  display.print("BOOTING...");
+  // 부트 화면은 로고만 표시한다.
+  int16_t logoX = (LCD_W - (int16_t)LOGO_1D_ARCADE_W) / 2;
+  int16_t logoY = (LCD_H - (int16_t)LOGO_1D_ARCADE_H) / 2;
+  drawLogo1DArcade(display, logoX, logoY);   // RLE 압축 로고(Logo1DArcade.h 주석 참고)
   display.display();
 }
 
@@ -1029,8 +1085,8 @@ void setup() {
     pinMode(SWITCH_PINS[i], INPUT_PULLUP);  // 눌리면 GND로 연결되는 배선이라 내부 풀업 사용
   }
 
-  // 2P 보드에는 자기 스위치 LED 4개만 물려 있다(라인 LED는 1P 보드 쪽 체인). 여기서 180개를
-  // 다 내보내면 없는 픽셀에 데이터를 흘리며 show() 시간만 길어지므로(약 5.4ms → 0.12ms) 4개로 줄인다.
+  // 2P 보드에는 자기 스위치 LED 4개만 물려 있다(라인 LED는 1P 보드 쪽 체인). 여기서 176개를
+  // 다 내보내면 없는 픽셀에 데이터를 흘리며 show() 시간만 길어지므로(약 5.3ms → 0.12ms) 4개로 줄인다.
   strip.updateLength(isRole1P ? NUM_LEDS_1P : NUM_LEDS_2P);
   strip.begin();
   strip.setBrightness(BRIGHTNESS);
@@ -1040,7 +1096,6 @@ void setup() {
   display.begin();
   display.setTextSize(2);
   display.setTextColor(ST77XX_WHITE);
-  drawBootScreen();
 
   bootAnimation();  // 인터럽트를 걸기 전에 실행 - 초기화 도중 스위치 신호로 오작동하는 것을 방지
 
@@ -1061,6 +1116,11 @@ void setup() {
   phase = PHASE_READY;
   phaseStartMs = millis();
   lastPhysicsUs = micros();
+
+  // setup에서 로고만 3초 보여준 뒤 다음 화면으로 넘긴다.
+  drawBootScreen();
+  delay(3000);
+  drawSearchingScreen();
 
   // 인터럽트는 다른 초기화가 모두 끝난 뒤 마지막에 붙인다
   for (uint8_t i = 0; i < NUM_SWITCHES; i++) {
@@ -1113,18 +1173,20 @@ void loop() {
   }
 
   // 스트립 갱신. 1P는 매 프레임 코트를 다시 그리고, 2P는 스위치 LED만 바뀔 때 갱신한다.
+  // 무지개 구간에는 스위치 LED도 무지개의 일부라, 그 위에 덧그리지 않는다.
   if (isRole1P) {
     if (now - lastFrameMs >= FRAME_MS) {
       lastFrameMs = now;
       if (paired) renderField();
       else        clearField();
-      renderSwitchLeds(now);
+      if (!rainbowActive()) renderSwitchLeds(now);
       safeShow();
       stripDirty = false;
     }
   } else if (stripDirty || now - lastFrameMs >= FRAME_MS) {
     lastFrameMs = now;
-    renderSwitchLeds(now);
+    if (paired && rainbowActive()) drawRainbow(now);   // 2P는 스위치 LED 4개가 전부다
+    else                           renderSwitchLeds(now);
     safeShow();
     stripDirty = false;
   }

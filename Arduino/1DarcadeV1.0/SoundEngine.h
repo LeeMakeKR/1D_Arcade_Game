@@ -32,10 +32,13 @@
 
 #define SOUND_MAX_VOICES 4  // 동시 멀티트랙 재생 개수
 
-// 출력 볼륨. 8bit PCM을 16bit로 올릴 때의 시프트 양이라 한 단계 낮출 때마다 진폭이 절반이 된다.
-//   8 = 원본 그대로 / 7 = 50% / 6 = 25%
-// 곱셈이 아닌 시프트라 샘플당 비용은 그대로다.
-#define SOUND_GAIN_SHIFT 7
+// 출력 볼륨. 설정 화면에서 실시간으로 바꿔야 해서 컴파일 타임 상수가 아니라 변수로 둔다.
+// 0 = 무음, SOUND_GAIN_UNITY = 원음. 샘플당 곱셈 1회가 늘지만 22050Hz x 4트랙이라
+// 240MHz에서는 무시할 수준이다.
+#define SOUND_GAIN_UNITY 256
+
+void soundSetGain(uint16_t gain);   // 0 ~ SOUND_GAIN_UNITY
+uint16_t soundGetGain();
 
 // I2S를 설정하고 오디오 태스크(core 0)를 띄운다. setup()에서 1회 호출.
 // clips는 이 스케치가 쓸 소리들의 포인터 배열이며, 그 배열은 프로그램이 끝날 때까지

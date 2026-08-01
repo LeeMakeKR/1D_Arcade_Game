@@ -53,7 +53,7 @@
 #define FLASH_MS      300    // 버튼을 눌렀을 때 해당 LED를 켜 두는 시간(시각적 피드백용, 소리 길이와 무관)
 #define BOOT_STEP_MS  1000   // 부팅 애니메이션에서 LED 하나당 점등 유지 시간
 
-// ST7735 TFT LCD 핀 (5110과 같은 자리. RS=DC, SDA=MOSI, CLK=SCLK)
+// ST7735 TFT LCD 핀 (RS=DC, SDA=MOSI, CLK=SCLK)
 #define LCD_DC   9   // ST7735의 RS 핀 (Data/Command 선택)
 #define LCD_CS   10  // LCD SPI Chip Select (FSPI 하드웨어 기본 CS0)
 #define LCD_RST  14  // LCD 하드웨어 리셋 핀
@@ -77,14 +77,15 @@
 const uint8_t SWITCH_PINS[] = {7, 15, 16, 17};
 const uint8_t NUM_SWITCHES = sizeof(SWITCH_PINS) / sizeof(SWITCH_PINS[0]);
 
-Adafruit_NeoPixel strip(NUM_SWITCHES, LED_PIN, NEO_GRB + NEO_KHZ800);  // WS2815 4개 제어 객체
+// 색 순서는 RGB다. 데이터시트상 WS2815는 GRB지만 실제 스트립은 R과 G가 반대로 나온다
+// (Color(255,0,0)이 초록으로 점등). 스트립을 교체하면 여기부터 확인할 것.
+Adafruit_NeoPixel strip(NUM_SWITCHES, LED_PIN, NEO_RGB + NEO_KHZ800);  // WS2815 4개 제어 객체
 
-// 하드웨어 SPI 생성자는 5110과 인자 순서가 다르다: (CS, DC, RST)
+// 하드웨어 SPI 생성자 인자 순서: (CS, DC, RST)
 Adafruit_ST7735 tft = Adafruit_ST7735(LCD_CS, LCD_DC, LCD_RST);
 
-// 5110은 라이브러리가 프레임버퍼를 들고 있어서 clearDisplay()로 지우고 display()로 한 번에
-// 내보내는 방식이었다. ST7735에는 프레임버퍼가 없어 화면에 직접 그리면 깜빡이므로, 같은 크기의
-// 캔버스에 그린 뒤 통째로 전송한다. 덕분에 그리는 코드는 5110 때와 똑같이 쓸 수 있다.
+// ST7735는 프레임버퍼를 들고 있지 않아서 화면에 직접 그리면 깜빡인다. 그래서 화면과 같은 크기의
+// 캔버스에 그린 뒤 통째로 전송한다. clearDisplay()로 지우고 display()로 한 번에 내보내면 된다.
 class Lcd : public GFXcanvas16 {
 public:
   Lcd() : GFXcanvas16(LCD_W, LCD_H) {}

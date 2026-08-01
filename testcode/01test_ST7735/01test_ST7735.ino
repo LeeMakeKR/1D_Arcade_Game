@@ -2,21 +2,21 @@
   ===========================================================================
   01 - ST7735 TFT LCD (128x160) 표시 테스트
   ===========================================================================
-  기존 Nokia 5110(84x48 흑백) 자리에 그대로 꽂아 쓰는 ST7735 컬러 LCD의 배선/설정 확인용.
+  ST7735 컬러 LCD의 배선/설정 확인용.
   색 확인 → 화면 정보 표시 → 글자 흐르기 순으로 진행한다.
 
   ---------------------------------------------------------------------------
-  배선 (readme.md 기준 - 5110과 1:1로 같은 자리다)
+  배선 (readme.md 기준)
   ---------------------------------------------------------------------------
-    ST7735   5110에서의 이름   ESP32-S3
-    ------   ---------------   ------------------------------
-    VCC      VCC               3.3V
-    GND      GND               GND
-    CLK      SCLK              GPIO12  (FSPI 하드웨어 기본 SCK)
-    SDA      DIN               GPIO11  (FSPI 하드웨어 기본 MOSI)
-    RS       DC                GPIO9
-    RST      RST               GPIO14
-    CS       CE                GPIO10  (FSPI 하드웨어 기본 CS0)
+    ST7735   ESP32-S3
+    ------   ------------------------------
+    VCC      3.3V
+    GND      GND
+    CLK      GPIO12  (FSPI 하드웨어 기본 SCK)
+    SDA      GPIO11  (FSPI 하드웨어 기본 MOSI)
+    RS       GPIO9
+    RST      GPIO14
+    CS       GPIO10  (FSPI 하드웨어 기본 CS0)
 
   CLK/SDA/CS가 FSPI 하드웨어 기본 핀이라 SPI 객체를 그대로 쓴다(비트뱅잉 아님).
 
@@ -48,7 +48,7 @@
 #include <Adafruit_ST7735.h>
 #include <SPI.h>
 
-#define PIN_RS   9    // = DC (Data/Command). 5110의 DC와 같은 신호
+#define PIN_RS   9    // = DC (Data/Command)
 #define PIN_CS   10
 #define PIN_RST  14
 #define PIN_SDA  11   // = MOSI. 하드웨어 SPI가 알아서 쓰지만 SPI.begin에 명시한다
@@ -58,7 +58,7 @@
 #define TFT_ROTATION 3               // 0,2 = 세로(128x160) / 1,3 = 가로(160x128)
 #define SPI_HZ       24000000        // 40MHz는 화면 아래쪽이 깨진다(위 주석 참고)
 
-// 하드웨어 SPI 생성자는 5110과 인자 순서가 다르다: (CS, DC, RST)
+// 하드웨어 SPI 생성자 인자 순서: (CS, DC, RST)
 Adafruit_ST7735 tft = Adafruit_ST7735(PIN_CS, PIN_RS, PIN_RST);
 
 const char MESSAGE[] = "Hello World";
@@ -69,7 +69,7 @@ const char MESSAGE[] = "Hello World";
 #define FRAME_DELAY   16                 // 약 60fps
 
 // 글자 띠만 따로 그려서 통째로 전송한다.
-// TFT는 5110처럼 프레임버퍼를 들고 있지 않아서, 화면에 직접 지우고 다시 그리면 깜빡인다.
+// TFT는 프레임버퍼를 들고 있지 않아서, 화면에 직접 지우고 다시 그리면 깜빡인다.
 // 캔버스(메모리 상의 작은 프레임버퍼)에 완성한 뒤 한 번에 밀어넣으면 깜빡임이 없다.
 GFXcanvas16* band = nullptr;
 int16_t textX;

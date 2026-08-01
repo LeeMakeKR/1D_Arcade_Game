@@ -5,7 +5,7 @@
 #include <Adafruit_ST7735.h>
 #include <SPI.h>
 
-// ST7735 TFT LCD 핀 (5110과 같은 자리. RS=DC, SDA=MOSI, CLK=SCLK)
+// ST7735 TFT LCD 핀 (RS=DC, SDA=MOSI, CLK=SCLK)
 #define LCD_DC   9    // ST7735의 RS 핀
 #define LCD_CS   10
 #define LCD_RST  14
@@ -34,12 +34,11 @@ const uint8_t NUM_INPUT_SWITCHES = sizeof(INPUT_SWITCH_PINS) / sizeof(INPUT_SWIT
 
 const uint8_t BROADCAST_MAC[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
-// 하드웨어 SPI 생성자는 5110과 인자 순서가 다르다: (CS, DC, RST)
+// 하드웨어 SPI 생성자 인자 순서: (CS, DC, RST)
 Adafruit_ST7735 tft = Adafruit_ST7735(LCD_CS, LCD_DC, LCD_RST);
 
-// 5110은 라이브러리가 프레임버퍼를 들고 있어서 clearDisplay()로 지우고 display()로 한 번에
-// 내보내는 방식이었다. ST7735에는 프레임버퍼가 없어 화면에 직접 그리면 깜빡이므로, 같은 크기의
-// 캔버스에 그린 뒤 통째로 전송한다. 덕분에 그리는 코드는 5110 때와 똑같이 쓸 수 있다.
+// ST7735는 프레임버퍼를 들고 있지 않아서 화면에 직접 그리면 깜빡인다. 그래서 화면과 같은 크기의
+// 캔버스에 그린 뒤 통째로 전송한다. clearDisplay()로 지우고 display()로 한 번에 내보내면 된다.
 class Lcd : public GFXcanvas16 {
 public:
   Lcd() : GFXcanvas16(LCD_W, LCD_H) {}
