@@ -29,10 +29,15 @@
           │        │      └─ SOLO PONG
           │        └─ 2P ── DUEL PONG
           └─ SETUP ─┬─ LED BRIGHTNESS
-                    └─ SOUND VOLUME
+                    ├─ SOUND VOLUME
+                    └─ ESP-NOW CHANNEL
   설정 항목은 Blue로 편집에 들어가 Green/White로 값을 올리고 내린다. 다시 Blue나 Red를
-  누르면 편집이 끝나면서 값이 NVS에 저장되어 다음 부팅에도 유지된다. 밝기는 편집 중에 스트립 전체가 무지개로 돌아 실제 밝기를 보여주고,
-  볼륨은 라인 LED에 파란 막대로 값을 보여준다.
+  누르면 편집이 끝나면서 값이 NVS에 저장되어 다음 부팅에도 유지된다. 편집 중에는 라인 LED가
+  값을 같이 보여준다. 밝기는 스트립 전체가 무지개로 돌아 실제 밝기를 그대로 보여주고,
+  볼륨은 파란 막대, 채널은 번호만큼의 노란 덩어리다.
+
+  채널(1~13)은 Duel Pong의 ESP-NOW가 쓰는 값이라 두 보드가 같아야 서로 보인다. 주변
+  공유기와 겹쳐 2P 연결이 불안할 때 옮기라고 빼 둔 항목이고, 1P 게임에는 영향이 없다.
 
   ---------------------------------------------------------------------------
   보드 두 대
@@ -123,7 +128,7 @@ const PageDef PAGES[] = {
   { "GAME",      { "1P",    "2P",    nullptr }, 2 },   // P_MODE
   { "1 PLAYER",  { "SNAKE", "SOLO PONG", nullptr }, 2 },   // P_LIST_1P
   { "2 PLAYER",  { "DUEL PONG", nullptr, nullptr }, 1 },   // P_LIST_2P
-  { "SETUP",     { "BRIGHT", "VOLUME", nullptr }, 2 },     // P_SETUP
+  { "SETUP",     { "BRIGHT", "VOLUME", "CHANNEL" }, 3 },   // P_SETUP
 };
 
 // 설정 값 숫자를 그리는 x. 이름이 여기까지 침범하지 않도록 위 길이 제한을 지킬 것.
@@ -135,6 +140,10 @@ const PageDef PAGES[] = {
 // 가장 무거운 화면이라 전류도 같이 눌러진다.
 #define MENU_RAINBOW_PERIOD_MS  4000
 #define MENU_RAINBOW_SCALE      0.25f
+
+// 채널 조절 중에 라인 LED에 그리는 덩어리. 최대 13개가 172칸 안에 넉넉히 들어간다(13*6 = 78).
+#define CHANNEL_DOT_PITCH  6   // 덩어리 시작 사이의 간격(칸)
+#define CHANNEL_DOT_LEN    2   // 덩어리 하나의 길이(칸)
 
 // ---------------------------------------------------------------------------
 // 메뉴 그리기
@@ -161,7 +170,9 @@ void drawMenuLcd() {
 
     // 설정 페이지는 항목 오른쪽에 현재 값을 같이 보여준다
     if (page == P_SETUP) {
-      uint8_t v = (i == 0) ? settingBrightness : settingVolume;
+      uint8_t v = (i == 0) ? settingBrightness
+                : (i == 1) ? settingVolume
+                :            settingChannel;
       display.setTextColor(sel ? ST77XX_YELLOW : LCD_GREY);
       display.setCursor(SETTING_VALUE_X, y);
       display.print(v);
@@ -199,11 +210,21 @@ void drawMenuStrip(uint32_t now) {
   strip.clear();
   drawMenuSwitchLeds();
 
-  // 볼륨은 귀로 듣는 값이라 눈으로 볼 게 없어서, 라인 LED에 값을 막대로 보여준다.
-  if (page == P_SETUP && editing) {
+  if (page == P_SETUP && editing && cursor == 1) {
+    // 볼륨은 귀로 듣는 값이라 눈으로 볼 게 없어서, 라인 LED에 값을 막대로 보여준다.
     int16_t n = (int16_t)((uint32_t)FIELD_LEN * settingVolume / SETTING_STEPS);
     for (int16_t i = 0; i < n; i++) {
       strip.setPixelColor(FIELD_START + i, scaleColor(colBlue(), 0.35f));
+    }
+  } else if (page == P_SETUP && editing && cursor == 2) {
+    // 채널은 비율이 아니라 번호라서 막대로는 몇 번인지 읽히지 않는다. 띄엄띄엄 놓은
+    // 덩어리 N개로 그려서 두 보드를 나란히 놓고 눈으로 세어 맞출 수 있게 한다.
+    for (uint8_t c = 0; c < settingChannel; c++) {
+      for (uint8_t d = 0; d < CHANNEL_DOT_LEN; d++) {
+        int16_t idx = FIELD_START + c * CHANNEL_DOT_PITCH + d;
+        if (idx > FIELD_END) break;
+        strip.setPixelColor(idx, scaleColor(colYellow(), 0.35f));
+      }
     }
   }
   safeShow();
@@ -291,15 +312,22 @@ void menuBack() {
 // 편집 중이면 값을, 아니면 커서를 움직인다. delta: +1 = 위/증가, -1 = 아래/감소.
 void menuMove(int8_t delta) {
   if (page == P_SETUP && editing) {
-    uint8_t& v = (cursor == 0) ? settingBrightness : settingVolume;
+    // 밝기/볼륨은 0~SETTING_STEPS 단계지만 채널은 번호 그대로라 범위가 다르다.
+    uint8_t& v = (cursor == 0) ? settingBrightness
+               : (cursor == 1) ? settingVolume
+               :                 settingChannel;
+    int16_t lo = (cursor == 2) ? CHANNEL_MIN : 0;
+    int16_t hi = (cursor == 2) ? CHANNEL_MAX : SETTING_STEPS;
+
     int16_t nv = (int16_t)v + delta;
-    if (nv < 0) nv = 0;
-    if (nv > SETTING_STEPS) nv = SETTING_STEPS;
+    if (nv < lo) nv = lo;
+    if (nv > hi) nv = hi;
     if ((uint8_t)nv == v) return;
     v = (uint8_t)nv;
 
-    if (cursor == 0) applyBrightness();
-    else             applyVolume();
+    if      (cursor == 0) applyBrightness();
+    else if (cursor == 1) applyVolume();
+    else                  applyChannel();
     Settings::markDirty();
     soundPlay(SFX_UI_MOVE);   // 볼륨은 이 소리로 바뀐 크기를 바로 확인할 수 있다
     menuDirty = true;
@@ -365,7 +393,7 @@ void setup() {
   // 콜백과 피어만 붙였다 뗀다. 반복 초기화보다 안정적이다.
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();
-  esp_wifi_set_channel(ESPNOW_CHANNEL, WIFI_SECOND_CHAN_NONE);
+  applyChannel();   // Settings::begin()이 읽어 둔 설정값. WiFi가 뜬 뒤에야 부를 수 있다
   esp_wifi_set_ps(WIFI_PS_NONE);   // 모뎀 슬립 끔: 입력 전달 지연 스파이크 방지
   esp_now_init();
 

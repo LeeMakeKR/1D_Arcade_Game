@@ -6,7 +6,7 @@
   메뉴와 세 게임이 같이 쓰는 것들만 모아 둔다.
     - 하드웨어 객체(LED 스트립, LCD)
     - 스위치 입력(디바운스 + 이번 프레임에 새로 눌린 버튼)
-    - 설정값(LED 밝기 / 사운드 볼륨)
+    - 설정값(LED 밝기 / 사운드 볼륨 / ESP-NOW 채널)
     - 코트 좌표와 색 유틸
 
   이 파일은 .ino 한 곳에서만 include된다(게임 헤더들은 이 파일을 include한다).
@@ -30,6 +30,7 @@
 #include <Adafruit_ST7735.h>
 #include <SPI.h>
 #include <Preferences.h>
+#include <esp_wifi.h>   // applyChannel()의 esp_wifi_set_channel()
 
 #include "SoundEngine.h"
 #include "Logo1DArcade.h"
@@ -65,9 +66,7 @@
 
 #define BOARD_ID_PIN  18   // 5번 토글: HIGH = 라인 LED가 달린 보드(1P), LOW = 스위치만 있는 보드(2P)
 
-// ESP-NOW 채널. 게임이 아니라 보드 설정이라 여기 둔다(.ino의 WiFi 초기화와 DuelPong이 같이 쓴다).
-// 두 보드가 같은 채널이어야 서로 보인다. 추후 설정 화면에서 NVS로 저장할 후보.
-constexpr uint8_t ESPNOW_CHANNEL = 1;
+// ESP-NOW 채널은 설정 항목이 되어 아래 "설정" 절의 settingChannel로 옮겼다.
 
 // 인덱스 = 스위치 LED 위치(0~3). 그 자리의 스위치가 물려 있는 GPIO를 적는다.
 // 3번/4번 자리의 배선이 GPIO 번호 순서와 반대라 17과 16을 바꿔 넣었다.
@@ -164,15 +163,23 @@ enum SfxId : uint8_t {
 // ---------------------------------------------------------------------------
 // 설정 (설정 메뉴에서 바꾸고 모든 게임이 따른다)
 // ---------------------------------------------------------------------------
-// 단계로 들고 있다가 하드웨어 값으로 변환한다. 화면에 막대로 보여주기 쉽고,
-// 나중에 NVS에 저장할 때도 작은 정수 하나면 된다.
+// 밝기와 볼륨은 단계로 들고 있다가 하드웨어 값으로 변환한다. 화면에 막대로 보여주기 쉽고,
+// NVS에 저장할 때도 작은 정수 하나면 된다.
 #define SETTING_STEPS     10    // 밝기/볼륨 공통 단계 수 (0 = 최소)
 #define BRIGHTNESS_MIN    20    // 0단계에서의 스트립 밝기(완전히 끄지는 않는다)
 #define BRIGHTNESS_MAX   200    // 최고 단계에서의 스트립 밝기
 
+// ESP-NOW 채널. 두 보드가 같은 값이어야 Duel Pong에서 서로 보인다.
+// 밝기/볼륨과 달리 단계가 아니라 채널 번호 그대로라서 범위를 따로 둔다.
+// 주변 공유기와 겹치면 패킷이 밀리므로 현장에서 바꿀 수 있게 설정 항목으로 뺐다.
+#define CHANNEL_MIN       1
+#define CHANNEL_MAX      13    // 국내 2.4GHz 허용 범위
+#define CHANNEL_DEFAULT   1
+
 // 기본값은 한가운데. 단계 수가 바뀌어도 체감 기본이 유지되도록 절반 지점으로 둔다.
 uint8_t settingBrightness = SETTING_STEPS / 2;   // 0 ~ SETTING_STEPS
 uint8_t settingVolume     = SETTING_STEPS / 2;   // 0 ~ SETTING_STEPS (0 = 무음)
+uint8_t settingChannel    = CHANNEL_DEFAULT;     // CHANNEL_MIN ~ CHANNEL_MAX
 
 void applyBrightness() {
   uint16_t span = BRIGHTNESS_MAX - BRIGHTNESS_MIN;
@@ -182,6 +189,13 @@ void applyBrightness() {
 
 void applyVolume() {
   soundSetGain((uint16_t)((uint32_t)SOUND_GAIN_UNITY * settingVolume / SETTING_STEPS));
+}
+
+// WiFi가 시작된 뒤에만 의미가 있다. 부팅 때는 .ino의 WiFi 초기화가 직접 부르고,
+// 그 뒤로는 설정 메뉴에서 값이 바뀔 때마다 부른다.
+// 이미 붙어 있는 피어는 Duel Pong을 나올 때 정리되므로 여기서 건드릴 게 없다.
+void applyChannel() {
+  esp_wifi_set_channel(settingChannel, WIFI_SECOND_CHAN_NONE);
 }
 
 // ---------------------------------------------------------------------------
@@ -198,10 +212,14 @@ void begin() {
   prefs.begin("arcade", false);   // 네임스페이스 이름은 15자 이내여야 한다
   settingBrightness = prefs.getUChar("bright", SETTING_STEPS / 2);
   settingVolume     = prefs.getUChar("vol",    SETTING_STEPS / 2);
+  settingChannel    = prefs.getUChar("ch",     CHANNEL_DEFAULT);
 
   // 저장된 값이 손상됐거나 단계 수를 줄인 뒤 처음 켠 경우를 막는다
   if (settingBrightness > SETTING_STEPS) settingBrightness = SETTING_STEPS / 2;
   if (settingVolume     > SETTING_STEPS) settingVolume     = SETTING_STEPS / 2;
+  if (settingChannel < CHANNEL_MIN || settingChannel > CHANNEL_MAX) {
+    settingChannel = CHANNEL_DEFAULT;   // 이 값이 어긋나면 2P가 통째로 안 되므로 꼭 막는다
+  }
 }
 
 void markDirty() { dirty = true; }
@@ -214,6 +232,7 @@ void save() {
   dirty = false;
   prefs.putUChar("bright", settingBrightness);   // 값이 같으면 NVS가 알아서 쓰지 않는다
   prefs.putUChar("vol",    settingVolume);
+  prefs.putUChar("ch",     settingChannel);
 }
 
 }  // namespace Settings

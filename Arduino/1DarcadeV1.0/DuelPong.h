@@ -129,7 +129,7 @@ void addPeer(const uint8_t* mac) {
   if (esp_now_is_peer_exist(mac)) return;
   esp_now_peer_info_t info = {};
   memcpy(info.peer_addr, mac, 6);
-  info.channel = ESPNOW_CHANNEL;
+  info.channel = settingChannel;   // 설정 메뉴 값. 두 보드가 같아야 서로 보인다
   info.ifidx = WIFI_IF_STA;
   info.encrypt = false;
   esp_now_add_peer(&info);

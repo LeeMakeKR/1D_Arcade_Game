@@ -33,10 +33,10 @@ namespace SnakeInvader {
 // 세 게임이 같은 이름의 상수를 쓰기 때문에(COUNTDOWN_STEP_MS 등) #define 대신
 // 네임스페이스 안의 constexpr로 둔다. 매크로는 네임스페이스를 타지 않아 서로 덮어쓴다.
 constexpr uint16_t SNAKE_BASE_LEN        = 5;      // 레벨 1 지렁이 길이(칸 수)
-constexpr uint16_t SNAKE_LEN_PER_LEVEL   = 3;      // 레벨업마다 늘어나는 길이
-constexpr uint16_t MAX_SNAKE_LEN         = 100;    // 배열 크기 상한
-constexpr float    SNAKE_BASE_SPEED      = 6.0f;   // 레벨 1 전진 속도(칸/초)
-constexpr float    SNAKE_SPEED_PER_LEVEL = 1.0f;   // 레벨업마다 늘어나는 속도
+constexpr uint16_t SNAKE_LEN_PER_LEVEL   = 1;      // 레벨업마다 늘어나는 길이
+constexpr uint16_t MAX_SNAKE_LEN         = 25;    // 배열 크기 상한
+constexpr float    SNAKE_BASE_SPEED      = 4.0f;   // 레벨 1 전진 속도(칸/초)
+constexpr float    SNAKE_SPEED_PER_LEVEL = 0.5f;   // 레벨업마다 늘어나는 속도
 constexpr float    SNAKE_MISS_ACCEL      = 1.15f;  // 총알 색 불일치 시 가속 배율
 constexpr float    SNAKE_MAX_SPEED       = 60.0f;  // 무한 가속 방지용 상한
 constexpr float    BULLET_SPEED          = 150.0f; // 총알 속도(칸/초)
