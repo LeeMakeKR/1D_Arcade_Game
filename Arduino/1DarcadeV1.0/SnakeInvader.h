@@ -290,6 +290,14 @@ void fireBullet(uint32_t color) {
   // 슬롯이 다 찼으면 조용히 버린다(난사 방지용 자연스러운 상한)
 }
 
+// 색이 틀린 총알에 대한 벌칙: 꼬리 끝(FIELD_END 쪽)에 무작위 색 세그먼트를 하나 붙인다.
+// 배열 상한에 걸리면 길이는 그대로 두고 속도 가속만 적용된다.
+void growSnakeTail() {
+  if (snakeCount >= MAX_SNAKE_LEN) return;
+  snakeColors[snakeCount] = randomSnakeColor();
+  snakeCount++;
+}
+
 // 헤드를 제거하고 다음 세그먼트를 새 헤드로 승격한다.
 void removeSnakeHead() {
   headPos += 1.0f;
@@ -421,6 +429,7 @@ void updatePlay(uint32_t now, uint8_t pressed) {
         soundPlay(SFX_BULLET_MISS);
         snakeSpeed *= SNAKE_MISS_ACCEL;
         if (snakeSpeed > SNAKE_MAX_SPEED) snakeSpeed = SNAKE_MAX_SPEED;
+        growSnakeTail();   // 빨라질 뿐 아니라 꼬리도 한 칸 길어진다
       }
     }
   }
@@ -435,7 +444,9 @@ void updatePlay(uint32_t now, uint8_t pressed) {
   }
   if (headPos <= (float)FIELD_START) {
     soundPlay(SFX_GAME_OVER);
-    drawMessageLcd("GAME", "OVER", ST77XX_RED);
+    char overBuf[12];
+    snprintf(overBuf, sizeof(overBuf), "LEVEL %u", level);   // 최종 레벨(리셋 전 값)
+    drawMessageLcd("GAME OVER", overBuf, ST77XX_RED);
     flashField(GAME_OVER_COLOR, 3, 200);
 
     // 다시 READY?로. 여기서 Red를 누르면 메뉴로 나갈 수 있다.
