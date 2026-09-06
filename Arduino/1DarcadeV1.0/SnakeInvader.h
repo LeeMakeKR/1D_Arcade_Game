@@ -171,6 +171,23 @@ void drawMessageLcd(const char* l1, const char* l2, uint16_t color) {
   display.display();
 }
 
+// 게임 오버: "GAME OVER" 9글자는 크기 3에서 셀 폭(9*18=162)이 LCD_W(160)를 넘어
+// GFX가 마지막 글자를 다음 줄로 넘긴다. 글리프 자체는 159px에서 끝나므로
+// 줄바꿈만 꺼두면 잘리지 않고 한 줄에 들어간다.
+void drawGameOverLcd(uint16_t finalLevel) {
+  char buf[12];
+  snprintf(buf, sizeof(buf), "LEVEL %u", finalLevel);
+
+  display.clearDisplay();
+  display.setTextWrap(false);
+  display.setTextColor(ST77XX_RED);
+  printCentered("GAME OVER", 3, 40);
+  display.setTextColor(ST77XX_WHITE);
+  printCentered(buf, 3, 70);
+  display.setTextWrap(true);
+  display.display();
+}
+
 void drawGameLcd() {
   display.clearDisplay();
   display.setTextColor(ST77XX_CYAN);
@@ -444,9 +461,7 @@ void updatePlay(uint32_t now, uint8_t pressed) {
   }
   if (headPos <= (float)FIELD_START) {
     soundPlay(SFX_GAME_OVER);
-    char overBuf[12];
-    snprintf(overBuf, sizeof(overBuf), "LEVEL %u", level);   // 최종 레벨(리셋 전 값)
-    drawMessageLcd("GAME OVER", overBuf, ST77XX_RED);
+    drawGameOverLcd(level);   // 최종 레벨(리셋 전 값)
     flashField(GAME_OVER_COLOR, 3, 200);
 
     // 다시 READY?로. 여기서 Red를 누르면 메뉴로 나갈 수 있다.
