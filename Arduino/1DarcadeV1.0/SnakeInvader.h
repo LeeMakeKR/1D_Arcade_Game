@@ -56,6 +56,7 @@ constexpr uint16_t FLASH_MS              = 120;   // 누른 스위치 LED를 밝
 constexpr float    SWITCH_BOOST          = 1.5f;  // 스위치 LED는 필드보다 눈에 띄게
 constexpr uint16_t READY_RAINBOW_MS      = 5000;  // READY?에서 무지개로 넘어가는 시간
 constexpr uint16_t RAINBOW_PERIOD_MS     = 3000;
+constexpr uint16_t GAME_OVER_HOLD_MS     = 5000;  // 게임 오버 화면(레벨 표시) 유지 시간
 
 // 카운트다운에 쓰는 살짝 죽인 색
 const uint32_t COUNTDOWN_RED   = 0x500000;
@@ -63,12 +64,13 @@ const uint32_t COUNTDOWN_GREEN = 0x005000;
 const uint32_t WAVE_CLEAR_COLOR = 0x003C00;   // 초록
 const uint32_t GAME_OVER_COLOR  = 0x3C0000;   // 빨강
 
-enum State : uint8_t { S_READY, S_ARMED, S_PLAY };
+enum State : uint8_t { S_READY, S_ARMED, S_PLAY, S_GAMEOVER };
 
 State state = S_READY;
 bool exitRequested = false;
 uint32_t readyEnteredMs = 0;
 uint32_t armedEnteredMs = 0;
+uint32_t gameOverEnteredMs = 0;
 uint32_t lastRainbowMs = 0;
 
 uint16_t level = 1;
@@ -356,8 +358,8 @@ void renderPlay(uint32_t now) {
 // ---------------------------------------------------------------------------
 // 모듈 규약
 // ---------------------------------------------------------------------------
-void begin() {
-  exitRequested = false;
+// READY? 화면으로. 레벨/점수/색을 처음 상태로 되돌린다.
+void enterReady() {
   level = 1;
   score = 0;
   clearBullets();
@@ -373,6 +375,11 @@ void begin() {
     strip.setPixelColor(i, switchUnlocked[i] ? currentSwitchColor[i] : 0);
   }
   safeShow();
+}
+
+void begin() {
+  exitRequested = false;
+  enterReady();
 }
 
 void updateReady(uint32_t now, uint8_t pressed) {
@@ -462,17 +469,17 @@ void updatePlay(uint32_t now, uint8_t pressed) {
   if (headPos <= (float)FIELD_START) {
     soundPlay(SFX_GAME_OVER);
     drawGameOverLcd(level);   // 최종 레벨(리셋 전 값)
-    flashField(GAME_OVER_COLOR, 3, 200);
+    gameOverEnteredMs = millis();
+    flashField(GAME_OVER_COLOR, 3, 200);   // 유지 시간 5초에 포함된다
 
-    // 다시 READY?로. 여기서 Red를 누르면 메뉴로 나갈 수 있다.
-    level = 1;
-    score = 0;
+    // 5초 동안 최종 레벨을 보여 준다. 그 안에 아무 스위치나 누르면 바로 넘어간다.
     clearBullets();
-    applyDefaultColors();
-    state = S_READY;
-    readyEnteredMs = millis();
-    Input::flush();
-    drawReadyLcd();
+    state = S_GAMEOVER;
+    for (uint8_t i = 0; i < NUM_SWITCH_LEDS; i++) {
+      strip.setPixelColor(i, switchUnlocked[i] ? currentSwitchColor[i] : 0);
+    }
+    safeShow();
+    Input::flush();   // 플래시가 delay()로 막는 동안 눌린 것은 버린다
     return;
   }
 
@@ -493,6 +500,9 @@ void update(uint32_t now) {
         state = S_PLAY;
         beginLevel();
       }
+      break;
+    case S_GAMEOVER:
+      if (pressed || now - gameOverEnteredMs >= GAME_OVER_HOLD_MS) enterReady();
       break;
     default:
       updatePlay(now, pressed);
